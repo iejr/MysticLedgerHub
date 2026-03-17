@@ -1,5 +1,10 @@
 import { BaseAdapter, AdapterConfig } from './BaseAdapter.js';
-import { AlchemyGetAssetTransferParams, AlchemyTraceFilterParams } from './types.js';
+import { 
+  AlchemyGetAssetTransferParams, 
+  AlchemyTraceFilterParams, 
+  AlchemyTokenPriceParams, 
+  AlchemyTokenPriceResponse 
+} from './types.js';
 
 export class AlchemyAdapter extends BaseAdapter {
   private apiKey: string;
@@ -58,5 +63,55 @@ export class AlchemyAdapter extends BaseAdapter {
       yield response.result.transfers;
       pageKey = response.result.pageKey;
     } while (pageKey);
+  }
+
+  // Native Balance
+  async getEthBalance(address: string, blockTag: string = 'latest'): Promise<string> {
+    const response: any = await this.fetchWithRetry({
+      method: 'POST',
+      url: '',
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_getBalance',
+        params: [address, blockTag],
+      },
+    });
+    return response.result; // Hex string in wei
+  }
+
+  // ERC-20 Balance via eth_call
+  async getTokenBalance(contractAddress: string, walletAddress: string, blockTag: string = 'latest'): Promise<string> {
+    // balanceOf(address) selector: 0x70a08231
+    const data = `0x70a08231000000000000000000000000${walletAddress.toLowerCase().replace('0x', '')}`;
+    
+    const response: any = await this.fetchWithRetry({
+      method: 'POST',
+      url: '',
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [{
+          to: contractAddress,
+          data: data,
+        }, blockTag],
+      },
+    });
+    return response.result; // Hex string
+  }
+
+  // Token Prices
+  async getTokenPrices(params: AlchemyTokenPriceParams): Promise<AlchemyTokenPriceResponse> {
+    return this.fetchWithRetry({
+      method: 'POST',
+      url: '',
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'alchemy_getTokenPrices',
+        params: [params],
+      },
+    });
   }
 }

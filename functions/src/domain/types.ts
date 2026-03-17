@@ -17,10 +17,10 @@ export const UnifiedTransactionSchema = z.object({
   status: z.enum(['success', 'failed', 'pending', 'other']),
   type: z.enum(['external', 'internal', 'erc20', 'nft', 'other']),
   method: z.string().optional(),
-  internalTransactions: z.array(z.any()).optional(), // Store internal txs for complex Base txs
-  actualSender: z.string().optional(), // Identified actual sender
-  actualReceiver: z.string().optional(), // Identified actual receiver
-  metadata: z.any().optional(), // Original provider data
+  internalTransactions: z.array(z.any()).optional(),
+  actualSender: z.string().optional(),
+  actualReceiver: z.string().optional(),
+  metadata: z.any().optional(),
 });
 
 export type UnifiedTransaction = z.infer<typeof UnifiedTransactionSchema>;
@@ -28,3 +28,20 @@ export type UnifiedTransaction = z.infer<typeof UnifiedTransactionSchema>;
 export interface TransactionParser {
   parse(rawData: any, walletAddress: string): UnifiedTransaction[];
 }
+
+export const UnifiedBalanceSchema = z.object({
+  walletAddress: z.string(),
+  chain: z.string(),
+  tokenId: z.string(),
+  tokenSymbol: z.string(),
+  tokenName: z.string(),
+  balance: z.string(), // Raw value
+  balanceFormatted: z.string(),
+  decimals: z.number(),
+  blockNumber: z.number().optional(),
+  usdPrice: z.number().optional(),
+  usdBalance: z.number().optional(),
+  updatedAt: z.string(),
+});
+
+export type UnifiedBalance = z.infer<typeof UnifiedBalanceSchema>;

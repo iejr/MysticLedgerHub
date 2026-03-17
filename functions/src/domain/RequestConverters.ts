@@ -1,5 +1,5 @@
 import { FetchOptions } from '../application/TransactionFetcherService.js';
-import { AlchemyGetAssetTransferParams, MoralisFetchParams } from '../infra/types.js';
+import { AlchemyGetAssetTransferParams, MoralisFetchParams, AlchemyTokenPriceParams } from '../infra/types.js';
 
 export class AlchemyRequestConverter {
   static fromFetchOptions(options: FetchOptions): AlchemyGetAssetTransferParams {
@@ -14,7 +14,6 @@ export class AlchemyRequestConverter {
   }
 
   static getChainUrl(chain: string): string {
-    // Standardize chain names for Alchemy
     const mapping: Record<string, string> = {
       'ethereum': 'eth-mainnet',
       'base': 'base-mainnet',
@@ -23,6 +22,15 @@ export class AlchemyRequestConverter {
       'optimism': 'opt-mainnet',
     };
     return mapping[chain.toLowerCase()] || `${chain.toLowerCase()}-mainnet`;
+  }
+
+  static toPriceParams(chain: string, addresses: string[]): AlchemyTokenPriceParams {
+    return {
+      addresses: addresses.map(addr => ({
+        network: chain.toLowerCase() === 'ethereum' ? 'eth-mainnet' : `${chain.toLowerCase()}-mainnet`,
+        address: addr,
+      })),
+    };
   }
 }
 

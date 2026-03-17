@@ -25,3 +25,16 @@ export interface MoralisFetchParams {
   toBlock?: number;
   order?: 'ASC' | 'DESC';
 }
+
+export interface AlchemyTokenPriceParams {
+  addresses: { network: string; address: string }[];
+}
+
+export interface AlchemyTokenPriceResponse {
+  data: {
+    network: string;
+    address: string;
+    prices: { currency: string; value: string; lastUpdatedAt: string }[];
+    error?: string;
+  }[];
+}
