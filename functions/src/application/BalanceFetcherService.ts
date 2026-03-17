@@ -33,7 +33,7 @@ export class BalanceFetcherService {
     for (const token of tokens) {
       let rawBalance = '0x0';
       if (token.type === 'native') {
-        rawBalance = await this.alchemyAdapter.getEthBalance(walletAddress, blockTag);
+        rawBalance = await this.alchemyAdapter.getNativeBalance(walletAddress, blockTag);
         tokenAddressesForPrice.push('0x0000000000000000000000000000000000000000'); // Alchemy use null or zero for native? Check docs.
       } else {
         const contractAddress = token.chains[chain.toLowerCase()]?.address;

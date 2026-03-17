@@ -1,5 +1,5 @@
 import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
+import admin from 'firebase-admin';
 import { Throttler } from './infra/Throttler.js';
 import { MoralisAdapter } from './infra/MoralisAdapter.js';
 import { AlchemyAdapter } from './infra/AlchemyAdapter.js';

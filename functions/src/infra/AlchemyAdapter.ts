@@ -66,7 +66,7 @@ export class AlchemyAdapter extends BaseAdapter {
   }
 
   // Native Balance
-  async getEthBalance(address: string, blockTag: string = 'latest'): Promise<string> {
+  async getNativeBalance(address: string, blockTag: string = 'latest'): Promise<string> {
     const response: any = await this.fetchWithRetry({
       method: 'POST',
       url: '',
