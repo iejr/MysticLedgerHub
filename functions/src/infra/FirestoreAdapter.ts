@@ -1,4 +1,4 @@
-import { Firestore, DocumentData, CollectionReference } from '@google-cloud/firestore';
+import { Firestore, DocumentData } from '@google-cloud/firestore';
 
 export class FirestoreAdapter {
   private db: Firestore;
@@ -22,8 +22,30 @@ export class FirestoreAdapter {
     return doc.data();
   }
 
+  // Price Caching
+  async savePrice(symbol: string, timestamp: string, value: string): Promise<void> {
+    const dateStr = timestamp.split('T')[0]; // Cache by date to organize
+    const docId = `${symbol.toUpperCase()}_${timestamp}`;
+    await this.db.collection('token_prices').doc(docId).set({
+      symbol: symbol.toUpperCase(),
+      timestamp,
+      date: dateStr,
+      value,
+      updatedAt: new Date(),
+    });
+  }
+
+  async getPricesInRange(symbol: string, startTime: string, endTime: string): Promise<any[]> {
+    const snapshot = await this.db.collection('token_prices')
+      .where('symbol', '==', symbol.toUpperCase())
+      .where('timestamp', '>=', startTime)
+      .where('timestamp', '<=', endTime)
+      .get();
+    
+    return snapshot.docs.map(doc => doc.data());
+  }
+
   async saveRawResponse(provider: string, endpoint: string, params: any, response: any): Promise<void> {
-    // Optional: save raw responses for debugging or audit trail
     const timestamp = new Date().toISOString();
     await this.db.collection('raw_logs').add({
       provider,

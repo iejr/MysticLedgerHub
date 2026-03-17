@@ -38,3 +38,29 @@ export interface AlchemyTokenPriceResponse {
     error?: string;
   }[];
 }
+
+export interface AlchemyHistoricalPriceParams {
+  symbol: string;
+  startTime: string; // ISO 8601
+  endTime: string;   // ISO 8601
+  interval: '5m' | '1h' | '1d';
+}
+
+// export interface AlchemyHistoricalPriceResponse {
+//   data: {
+//     symbol: string;
+//     prices: {
+//       timestamp: string;
+//       value: string;
+//     }[];
+//   };
+// }
+
+export interface AlchemyHistoricalPriceResponse {
+  symbol: string;
+  currency: string;
+  data: {
+      timestamp: string;
+      value: string;
+  }[];
+}

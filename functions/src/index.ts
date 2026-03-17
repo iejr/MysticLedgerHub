@@ -7,6 +7,7 @@ import { FirestoreAdapter } from './infra/FirestoreAdapter.js';
 import { TransactionFetcherService } from './application/TransactionFetcherService.js';
 import { BalanceFetcherService } from './application/BalanceFetcherService.js';
 import { ConfigService } from './domain/ConfigService.js';
+import { PriceService } from './domain/PriceService.js';
 
 admin.initializeApp();
 
@@ -72,8 +73,11 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
       throttler: alchemyThrottler,
     });
 
+    const firestoreAdapter = new FirestoreAdapter(db);
     const configService = new ConfigService();
-    const service = new BalanceFetcherService(alchemyAdapter, configService);
+    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
+    
+    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService);
 
     const balances = await service.fetchBalances({
       walletAddress: walletAddress as string,

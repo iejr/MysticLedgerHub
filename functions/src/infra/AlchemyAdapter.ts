@@ -3,7 +3,9 @@ import {
   AlchemyGetAssetTransferParams, 
   AlchemyTraceFilterParams, 
   AlchemyTokenPriceParams, 
-  AlchemyTokenPriceResponse 
+  AlchemyTokenPriceResponse,
+  AlchemyHistoricalPriceParams,
+  AlchemyHistoricalPriceResponse
 } from './types.js';
 
 export class AlchemyAdapter extends BaseAdapter {
@@ -101,7 +103,37 @@ export class AlchemyAdapter extends BaseAdapter {
     return response.result; // Hex string
   }
 
-  // Token Prices
+  // Block Info
+  async getBlock(blockTag: string): Promise<any> {
+    const response: any = await this.fetchWithRetry({
+      method: 'POST',
+      url: '',
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_getBlockByNumber',
+        params: [blockTag, false],
+      },
+    });
+    return response.result;
+  }
+
+  // Historical Token Prices
+  async fetchHistoricalPrices(params: AlchemyHistoricalPriceParams): Promise<AlchemyHistoricalPriceResponse> {
+    const { symbol, startTime, endTime, interval } = params;
+    return this.fetchWithRetry({
+      method: 'POST',
+      url: `https://api.g.alchemy.com/prices/v1/${this.apiKey}/tokens/historical`,
+      data: {
+        symbol,
+        startTime,
+        endTime,
+        interval,
+      },
+    });
+  }
+
+  // Current Token Prices (For completeness/fallback)
   async getTokenPrices(params: AlchemyTokenPriceParams): Promise<AlchemyTokenPriceResponse> {
     return this.fetchWithRetry({
       method: 'POST',
