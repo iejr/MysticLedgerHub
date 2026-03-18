@@ -25,15 +25,15 @@ export class AlchemyAdapter extends BaseAdapter {
     this.client.defaults.baseURL = `https://${chain}.g.alchemy.com/v2/${this.apiKey}`;
   }
 
-  // JSON-RPC Batching support with internal chunking
+  // JSON-RPC Batching support with internal chunking and order guarantee
   async sendBatch(requests: { method: string, params: any[] }[]): Promise<any[]> {
-    const allResults: any[] = [];
+    const allResults: any[] = new Array(requests.length);
     
     for (let i = 0; i < requests.length; i += this.CHUNK_SIZE) {
       const chunk = requests.slice(i, i + this.CHUNK_SIZE);
       const batchBody = chunk.map((req, index) => ({
         jsonrpc: '2.0',
-        id: index,
+        id: i + index, // Use global index to track position across chunks
         method: req.method,
         params: req.params,
       }));
@@ -43,7 +43,13 @@ export class AlchemyAdapter extends BaseAdapter {
         url: '',
         data: batchBody,
       });
-      allResults.push(...results);
+
+      // Place results into the correct position in the final array based on ID
+      results.forEach((res) => {
+        if (res && typeof res.id === 'number') {
+          allResults[res.id] = res;
+        }
+      });
     }
 
     return allResults;
@@ -158,7 +164,7 @@ export class AlchemyAdapter extends BaseAdapter {
     });
   }
 
-  // Current Token Prices (For completeness/fallback)
+  // Current Token Prices
   async getTokenPrices(params: AlchemyTokenPriceParams): Promise<AlchemyTokenPriceResponse> {
     return this.fetchWithRetry({
       method: 'POST',
