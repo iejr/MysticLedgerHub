@@ -95,3 +95,41 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
     res.status(500).send(error.message);
   }
 });
+
+export const fetchMultiBalances = functions.https.onRequest(async (req, res) => {
+  const { addresses, blockNumber, includeUsd } = req.body;
+
+  try {
+    const alchemyAdapter = new AlchemyAdapter({
+      apiKey: process.env.ALCHEMY_API_KEY || '',
+      baseUrl: '',
+      throttler: alchemyThrottler,
+    });
+
+    const firestoreAdapter = new FirestoreAdapter(db);
+    const configService = new ConfigService();
+    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
+    
+    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService);
+
+    // If addresses are provided in body, use them; otherwise use config
+    const options: any = {
+      blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
+      includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
+    };
+
+    if (addresses && Array.isArray(addresses)) {
+      options.wallets = addresses.map(addr => ({ address: addr, label: 'Custom' }));
+    }
+
+    const balances = await service.fetchMultiWalletBalances(options);
+
+    res.status(200).json({
+      count: balances.length,
+      balances,
+    });
+  } catch (error: any) {
+    console.error('Error fetching multi balances:', error);
+    res.status(500).send(error.message);
+  }
+});

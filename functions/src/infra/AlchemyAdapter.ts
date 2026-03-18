@@ -10,6 +10,7 @@ import {
 
 export class AlchemyAdapter extends BaseAdapter {
   private apiKey: string;
+  private readonly CHUNK_SIZE = 50;
 
   constructor(config: AdapterConfig) {
     super({
@@ -22,6 +23,30 @@ export class AlchemyAdapter extends BaseAdapter {
   // Update base URL based on chain
   setChain(chain: string) {
     this.client.defaults.baseURL = `https://${chain}.g.alchemy.com/v2/${this.apiKey}`;
+  }
+
+  // JSON-RPC Batching support with internal chunking
+  async sendBatch(requests: { method: string, params: any[] }[]): Promise<any[]> {
+    const allResults: any[] = [];
+    
+    for (let i = 0; i < requests.length; i += this.CHUNK_SIZE) {
+      const chunk = requests.slice(i, i + this.CHUNK_SIZE);
+      const batchBody = chunk.map((req, index) => ({
+        jsonrpc: '2.0',
+        id: index,
+        method: req.method,
+        params: req.params,
+      }));
+
+      const results = await this.fetchWithRetry<any[]>({
+        method: 'POST',
+        url: '',
+        data: batchBody,
+      });
+      allResults.push(...results);
+    }
+
+    return allResults;
   }
 
   async fetchAssetTransferTransactions(params: AlchemyGetAssetTransferParams): Promise<any> {

@@ -20,25 +20,65 @@ export interface AppConfig {
   chains: Record<string, ChainConfig>;
 }
 
-export class ConfigService {
-  private config: AppConfig;
+export interface WalletMetadata {
+  address: string;
+  label: string;
+  chains?: string[];
+}
 
-  constructor(configPath?: string) {
-    const resolvedPath = configPath || path.resolve(process.cwd(), 'src/config/tokens.yaml');
-    const fileContents = fs.readFileSync(resolvedPath, 'utf8');
-    this.config = yaml.load(fileContents) as AppConfig;
+export interface GlobalConfig {
+  chains: string[];
+  includeUsd: boolean;
+}
+
+export interface WalletConfig {
+  global: GlobalConfig;
+  wallets: WalletMetadata[];
+}
+
+export class ConfigService {
+  private tokenConfig: AppConfig;
+  private walletConfig: WalletConfig;
+
+  constructor() {
+    // Load tokens
+    const tokensPath = path.resolve(process.cwd(), 'src/config/tokens.yaml');
+    const tokensFile = fs.readFileSync(tokensPath, 'utf8');
+    this.tokenConfig = yaml.load(tokensFile) as AppConfig;
+
+    // Load wallets
+    const walletsPath = path.resolve(process.cwd(), 'src/config/wallets.yaml');
+    const walletsFile = fs.readFileSync(walletsPath, 'utf8');
+    this.walletConfig = yaml.load(walletsFile) as WalletConfig;
   }
 
   getTokensForChain(chain: string): TokenMetadata[] {
-    const chainConfig = this.config.chains[chain.toLowerCase()];
+    const chainConfig = this.tokenConfig.chains[chain.toLowerCase()];
     if (!chainConfig) return [];
 
-    return this.config.tokens.filter(token => 
+    return this.tokenConfig.tokens.filter(token => 
       chainConfig.allowlist.includes(token.id) && token.chains[chain.toLowerCase()]
     );
   }
 
   getTokenById(id: string): TokenMetadata | undefined {
-    return this.config.tokens.find(t => t.id === id);
+    return this.tokenConfig.tokens.find(t => t.id === id);
+  }
+
+  // Wallet Methods
+  getWallets(): WalletMetadata[] {
+    return this.walletConfig.wallets;
+  }
+
+  getGlobalChains(): string[] {
+    return this.walletConfig.global.chains;
+  }
+
+  getGlobalIncludeUsd(): boolean {
+    return this.walletConfig.global.includeUsd;
+  }
+
+  getWalletEffectiveChains(wallet: WalletMetadata): string[] {
+    return wallet.chains || this.walletConfig.global.chains;
   }
 }
