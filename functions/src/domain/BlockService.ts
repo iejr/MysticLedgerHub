@@ -1,6 +1,7 @@
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
 import { ConfigService } from './ConfigService.js';
+import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 
 export class BlockService {
   private alchemyAdapter: AlchemyAdapter;
@@ -24,7 +25,7 @@ export class BlockService {
     if (cached) return cached;
 
     // 2. Initialize Bounds
-    this.alchemyAdapter.setChain(chain); // Ensure correct chain
+    this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
     const latestBlock = await this.alchemyAdapter.getBlock('latest');
     const latestNumber = parseInt(latestBlock.number, 16);
     const latestTs = parseInt(latestBlock.timestamp, 16);

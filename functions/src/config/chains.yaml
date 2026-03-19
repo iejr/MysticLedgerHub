@@ -1,7 +1,7 @@
 ethereum:
   name: Ethereum Mainnet
   averageBlockTime: 12.1
-  startBlock: 0
+  startBlock: 20000000
   explorerUrl: https://etherscan.io/
 
 base:
