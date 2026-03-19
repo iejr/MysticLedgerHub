@@ -97,7 +97,7 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
 });
 
 export const fetchMultiBalances = functions.https.onRequest(async (req, res) => {
-  const { addresses, blockNumber, includeUsd } = req.body;
+  const { addresses, blockNumber, chainBlockNumbers, includeUsd } = req.body;
 
   try {
     const alchemyAdapter = new AlchemyAdapter({
@@ -112,9 +112,9 @@ export const fetchMultiBalances = functions.https.onRequest(async (req, res) => 
     
     const service = new BalanceFetcherService(alchemyAdapter, configService, priceService);
 
-    // If addresses are provided in body, use them; otherwise use config
     const options: any = {
       blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
+      chainBlockNumbers: chainBlockNumbers,
       includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
     };
 

@@ -14,7 +14,8 @@ export interface BalanceFetchOptions {
 export interface MultiWalletBalanceFetchOptions {
   wallets?: WalletMetadata[];
   chains?: string[];
-  blockNumber?: number;
+  blockNumber?: number; // Legacy/Fallback
+  chainBlockNumbers?: Record<string, number>; // New: per-chain block numbers
   includeUsd?: boolean;
 }
 
@@ -109,7 +110,10 @@ export class BalanceFetcherService {
     for (const [chain, chainWallets] of Object.entries(chainToWallets)) {
       this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
       const tokens = this.configService.getTokensForChain(chain);
-      const blockTag = options.blockNumber ? `0x${options.blockNumber.toString(16)}` : 'latest';
+      
+      // Determine block number for THIS chain
+      const chainBlockNumber = options.chainBlockNumbers?.[chain] || options.blockNumber;
+      const blockTag = chainBlockNumber ? `0x${chainBlockNumber.toString(16)}` : 'latest';
 
       const requests: { method: string, params: any[], meta: { wallet: string, token: any } }[] = [];
       for (const wallet of chainWallets) {
@@ -162,7 +166,7 @@ export class BalanceFetcherService {
           balance: balanceValue.toString(),
           balanceFormatted,
           decimals: token.decimals,
-          blockNumber: options.blockNumber,
+          blockNumber: chainBlockNumber,
           updatedAt: new Date().toISOString(),
         };
 
