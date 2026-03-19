@@ -3,6 +3,7 @@ import { ConfigService, WalletMetadata } from '../domain/ConfigService.js';
 import { UnifiedBalance } from '../domain/types.js';
 import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 import { PriceService } from '../domain/PriceService.js';
+import { BlockService } from '../domain/BlockService.js';
 
 export interface BalanceFetchOptions {
   walletAddress: string;
@@ -14,8 +15,14 @@ export interface BalanceFetchOptions {
 export interface MultiWalletBalanceFetchOptions {
   wallets?: WalletMetadata[];
   chains?: string[];
-  blockNumber?: number; // Legacy/Fallback
-  chainBlockNumbers?: Record<string, number>; // New: per-chain block numbers
+  blockNumber?: number;
+  chainBlockNumbers?: Record<string, number>;
+  includeUsd?: boolean;
+}
+
+export interface MultiWalletBalanceByTimestampOptions {
+  wallets?: WalletMetadata[];
+  timestamp: Date;
   includeUsd?: boolean;
 }
 
@@ -23,11 +30,18 @@ export class BalanceFetcherService {
   private alchemyAdapter: AlchemyAdapter;
   private configService: ConfigService;
   private priceService: PriceService;
+  private blockService?: BlockService;
 
-  constructor(alchemyAdapter: AlchemyAdapter, configService: ConfigService, priceService: PriceService) {
+  constructor(
+    alchemyAdapter: AlchemyAdapter, 
+    configService: ConfigService, 
+    priceService: PriceService,
+    blockService?: BlockService
+  ) {
     this.alchemyAdapter = alchemyAdapter;
     this.configService = configService;
     this.priceService = priceService;
+    this.blockService = blockService;
   }
 
   async fetchBalances(options: BalanceFetchOptions): Promise<UnifiedBalance[]> {
@@ -111,7 +125,6 @@ export class BalanceFetcherService {
       this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
       const tokens = this.configService.getTokensForChain(chain);
       
-      // Determine block number for THIS chain
       const chainBlockNumber = options.chainBlockNumbers?.[chain] || options.blockNumber;
       const blockTag = chainBlockNumber ? `0x${chainBlockNumber.toString(16)}` : 'latest';
 
@@ -182,5 +195,26 @@ export class BalanceFetcherService {
     }
 
     return allBalances;
+  }
+
+  async fetchMultiWalletBalancesByTimestamp(options: MultiWalletBalanceByTimestampOptions): Promise<UnifiedBalance[]> {
+    if (!this.blockService) throw new Error('BlockService not initialized');
+    
+    const wallets = options.wallets || this.configService.getWallets();
+    const uniqueChains = new Set<string>();
+    for (const wallet of wallets) {
+      this.configService.getWalletEffectiveChains(wallet).forEach(c => uniqueChains.add(c));
+    }
+
+    const chainBlockNumbers: Record<string, number> = {};
+    for (const chain of uniqueChains) {
+      chainBlockNumbers[chain] = await this.blockService.findBlockByTimestamp(chain, options.timestamp);
+    }
+
+    return this.fetchMultiWalletBalances({
+      wallets,
+      chainBlockNumbers,
+      includeUsd: options.includeUsd,
+    });
   }
 }

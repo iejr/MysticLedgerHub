@@ -1,0 +1,29 @@
+ethereum:
+  name: Ethereum Mainnet
+  averageBlockTime: 12.1
+  startBlock: 0
+  explorerUrl: https://etherscan.io/
+
+base:
+  name: Base
+  averageBlockTime: 2.0
+  startBlock: 0
+  explorerUrl: https://basescan.org/
+
+polygon:
+  name: Polygon
+  averageBlockTime: 2.1
+  startBlock: 0
+  explorerUrl: https://polygonscan.com/
+
+arbitrum:
+  name: Arbitrum One
+  averageBlockTime: 0.25
+  startBlock: 0
+  explorerUrl: https://arbiscan.io/
+
+optimism:
+  name: Optimism
+  averageBlockTime: 2.0
+  startBlock: 0
+  explorerUrl: https://optimistic.etherscan.io/

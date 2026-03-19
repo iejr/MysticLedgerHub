@@ -24,7 +24,7 @@ export class FirestoreAdapter {
 
   // Price Caching
   async savePrice(symbol: string, timestamp: string, value: string): Promise<void> {
-    const dateStr = timestamp.split('T')[0]; // Cache by date to organize
+    const dateStr = timestamp.split('T')[0];
     const docId = `${symbol.toUpperCase()}_${timestamp}`;
     await this.db.collection('token_prices').doc(docId).set({
       symbol: symbol.toUpperCase(),
@@ -43,6 +43,27 @@ export class FirestoreAdapter {
       .get();
     
     return snapshot.docs.map(doc => doc.data());
+  }
+
+  // Block Mapping Caching
+  async saveBlockMapping(chain: string, timestamp: number, blockNumber: number): Promise<void> {
+    // Round timestamp to nearest 10 mins or something if we want broader reuse, 
+    // but for monthly reports, exact match or close match is better.
+    const docId = `${chain.toLowerCase()}_ts_${timestamp}`;
+    await this.db.collection('block_mappings').doc(docId).set({
+      chain: chain.toLowerCase(),
+      timestamp,
+      blockNumber,
+      updatedAt: new Date(),
+    });
+  }
+
+  async getBlockMapping(chain: string, timestamp: number): Promise<number | undefined> {
+    // For simplicity, look for exact match. 
+    // In future, could look for range +/- averageBlockTime
+    const docId = `${chain.toLowerCase()}_ts_${timestamp}`;
+    const doc = await this.db.collection('block_mappings').doc(docId).get();
+    return doc.data()?.blockNumber;
   }
 
   async saveRawResponse(provider: string, endpoint: string, params: any, response: any): Promise<void> {

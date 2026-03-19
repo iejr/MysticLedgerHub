@@ -23,6 +23,10 @@ tokens:
         address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
       polygon:
         address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+      arbitrum:
+        address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+      optimism:
+        address: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
 
 chains:
   ethereum:
@@ -30,4 +34,8 @@ chains:
   base:
     allowlist: [ethereum-native, usdc]
   polygon:
+    allowlist: [ethereum-native, usdc]
+  arbitrum:
+    allowlist: [ethereum-native, usdc]
+  optimism:
     allowlist: [ethereum-native, usdc]

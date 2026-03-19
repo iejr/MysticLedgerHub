@@ -36,9 +36,17 @@ export interface WalletConfig {
   wallets: WalletMetadata[];
 }
 
+export interface ChainMetadata {
+  name: string;
+  averageBlockTime: number;
+  startBlock: number;
+  explorerUrl: string;
+}
+
 export class ConfigService {
   private tokenConfig: AppConfig;
   private walletConfig: WalletConfig;
+  private chainConfig: Record<string, ChainMetadata>;
 
   constructor() {
     // Load tokens
@@ -50,6 +58,11 @@ export class ConfigService {
     const walletsPath = path.resolve(process.cwd(), 'src/config/wallets.yaml');
     const walletsFile = fs.readFileSync(walletsPath, 'utf8');
     this.walletConfig = yaml.load(walletsFile) as WalletConfig;
+
+    // Load chains
+    const chainsPath = path.resolve(process.cwd(), 'src/config/chains.yaml');
+    const chainsFile = fs.readFileSync(chainsPath, 'utf8');
+    this.chainConfig = yaml.load(chainsFile) as Record<string, ChainMetadata>;
   }
 
   getTokensForChain(chain: string): TokenMetadata[] {
@@ -80,5 +93,10 @@ export class ConfigService {
 
   getWalletEffectiveChains(wallet: WalletMetadata): string[] {
     return wallet.chains || this.walletConfig.global.chains;
+  }
+
+  // Chain Methods
+  getChainMetadata(chain: string): ChainMetadata | undefined {
+    return this.chainConfig[chain.toLowerCase()];
   }
 }

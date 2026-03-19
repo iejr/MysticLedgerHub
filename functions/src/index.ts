@@ -8,6 +8,7 @@ import { TransactionFetcherService } from './application/TransactionFetcherServi
 import { BalanceFetcherService } from './application/BalanceFetcherService.js';
 import { ConfigService } from './domain/ConfigService.js';
 import { PriceService } from './domain/PriceService.js';
+import { BlockService } from './domain/BlockService.js';
 
 admin.initializeApp();
 
@@ -130,6 +131,56 @@ export const fetchMultiBalances = functions.https.onRequest(async (req, res) => 
     });
   } catch (error: any) {
     console.error('Error fetching multi balances:', error);
+    res.status(500).send(error.message);
+  }
+});
+
+export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (req, res) => {
+  const { addresses, timestamp, includeUsd } = req.body;
+
+  try {
+    const alchemyAdapter = new AlchemyAdapter({
+      apiKey: process.env.ALCHEMY_API_KEY || '',
+      baseUrl: '',
+      throttler: alchemyThrottler,
+    });
+
+    const firestoreAdapter = new FirestoreAdapter(db);
+    const configService = new ConfigService();
+    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
+    const blockService = new BlockService(alchemyAdapter, firestoreAdapter, configService);
+    
+    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, blockService);
+
+    let targetDate: Date | undefined;
+    if (timestamp) {
+      targetDate = new Date(timestamp);
+      if (isNaN(targetDate.getTime())) {
+        res.status(400).send('Invalid timestamp format');
+        return;
+      }
+    }
+
+    const options: any = {
+      timestamp: targetDate,
+      includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
+    };
+
+    if (addresses && Array.isArray(addresses)) {
+      options.wallets = addresses.map(addr => ({ address: addr, label: 'Custom' }));
+    }
+
+    // Use specific timestamp logic if provided, otherwise fallback to multi-balance latest
+    const balances = targetDate 
+      ? await service.fetchMultiWalletBalancesByTimestamp(options)
+      : await service.fetchMultiWalletBalances(options);
+
+    res.status(200).json({
+      count: balances.length,
+      balances,
+    });
+  } catch (error: any) {
+    console.error('Error fetching balances by timestamp:', error);
     res.status(500).send(error.message);
   }
 });
