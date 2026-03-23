@@ -1,29 +1,96 @@
 ethereum:
+  chainId: 1
   name: Ethereum Mainnet
   averageBlockTime: 12.1
   startBlock: 20000000
   explorerUrl: https://etherscan.io/
 
+abstract:
+  chainId: 2741
+  name: Abstract
+  averageBlockTime: 0.5
+  startBlock: 0
+  explorerUrl: https://abscan.org/blocks
+
+arbitrum:
+  chainId: 42161
+  name: Arbitrum One
+  averageBlockTime: 0.25
+  startBlock: 0
+  explorerUrl: https://arbiscan.io
+
+avax:
+  chainId: 43114
+  name: Avalanche
+  averageBlockTime: 1.0
+  startBlock: 0
+  explorerUrl: https://avascan.info/
+
 base:
+  chainId: 8453
   name: Base
   averageBlockTime: 2.0
   startBlock: 0
   explorerUrl: https://basescan.org/
 
+bnb:
+  chainId: 56
+  name: BNB Chain
+  averageBlockTime: 0.45
+  startBlock: 0
+  explorerUrl: https://bscscan.com/
+
+optimism:
+  chainId: 10
+  name: Optimism
+  averageBlockTime: 2.0
+  startBlock: 0
+  explorerUrl: https://optimistic.etherscan.io/
+
 polygon:
+  chainId: 137
   name: Polygon
   averageBlockTime: 2.1
   startBlock: 0
   explorerUrl: https://polygonscan.com/
 
-arbitrum:
-  name: Arbitrum One
-  averageBlockTime: 0.25
+zkSync:
+  chainId: 130
+  name: ZKsync
   startBlock: 0
-  explorerUrl: https://arbiscan.io/
+  explorerUrl: https://explorer.zksync.io/
 
-optimism:
-  name: Optimism
+zora: 
+  chainId: 7777777
+  name: Zora
   averageBlockTime: 2.0
   startBlock: 0
-  explorerUrl: https://optimistic.etherscan.io/
+  explorerUrl: https://explorer.zora.energy/
+
+blast:
+  chainId: 81457
+  name: Blast
+  averageBlockTime: 2.0
+  startBlock: 0
+  explorerUrl: https://blastscan.io/
+
+scroll:
+  chainId: 534352
+  name: Scroll
+  averageBlockTime: 3.0
+  startBlock: 0
+  explorerUrl: https://scrollscan.com/
+
+linea:
+  chainId: 59144
+  name: Linea
+  averageBlockTime: 2.2
+  startBlock: 0
+  explorerUrl: https://lineascan.build/
+
+ink:
+  chainId: 57073
+  name: Ink
+  averageBlockTime: 1.0
+  startBlock: 0
+  explorerUrl: https://explorer.inkonchain.com/

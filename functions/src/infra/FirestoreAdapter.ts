@@ -1,4 +1,5 @@
 import { Firestore, DocumentData } from '@google-cloud/firestore';
+import { UnifiedBalance } from '../domain/types.js';
 
 export class FirestoreAdapter {
   private db: Firestore;
@@ -24,7 +25,7 @@ export class FirestoreAdapter {
 
   // Price Caching
   async savePrice(symbol: string, timestamp: string, value: string): Promise<void> {
-    const dateStr = timestamp.split('T')[0];
+    const dateStr = timestamp.split('T')[0]; // Cache by date to organize
     const docId = `${symbol.toUpperCase()}_${timestamp}`;
     await this.db.collection('token_prices').doc(docId).set({
       symbol: symbol.toUpperCase(),
@@ -64,6 +65,23 @@ export class FirestoreAdapter {
     const docId = `${chain.toLowerCase()}_ts_${timestamp}`;
     const doc = await this.db.collection('block_mappings').doc(docId).get();
     return doc.data()?.blockNumber;
+  }
+
+  // Balance Caching
+  async saveBalance(balance: UnifiedBalance): Promise<void> {
+    const blockRef = balance.blockNumber || 'latest';
+    const docId = `${balance.walletAddress.toLowerCase()}_${balance.chain.toLowerCase()}_${balance.tokenId}_${blockRef}`;
+    await this.db.collection('balances').doc(docId).set({
+      ...balance,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async getBalance(walletAddress: string, chain: string, tokenId: string, blockNumber?: number): Promise<UnifiedBalance | undefined> {
+    const blockRef = blockNumber || 'latest';
+    const docId = `${walletAddress.toLowerCase()}_${chain.toLowerCase()}_${tokenId}_${blockRef}`;
+    const doc = await this.db.collection('balances').doc(docId).get();
+    return doc.exists ? (doc.data() as UnifiedBalance) : undefined;
   }
 
   async saveRawResponse(provider: string, endpoint: string, params: any, response: any): Promise<void> {

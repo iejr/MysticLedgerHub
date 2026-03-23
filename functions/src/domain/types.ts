@@ -39,6 +39,8 @@ export const UnifiedBalanceSchema = z.object({
   balanceFormatted: z.string(),
   decimals: z.number(),
   blockNumber: z.number().optional(),
+  blocktime: z.string(), // New: Actual block timestamp
+  requestedDate: z.string().optional(), // New: User requested timestamp
   usdPrice: z.number().optional(),
   usdBalance: z.number().optional(),
   updatedAt: z.string(),

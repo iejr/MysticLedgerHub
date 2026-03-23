@@ -4,12 +4,14 @@ import { UnifiedBalance } from '../domain/types.js';
 import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 import { PriceService } from '../domain/PriceService.js';
 import { BlockService } from '../domain/BlockService.js';
+import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
 
 export interface BalanceFetchOptions {
   walletAddress: string;
   chain: string;
   blockNumber?: number;
   includeUsd: boolean;
+  useCache?: boolean;
 }
 
 export interface MultiWalletBalanceFetchOptions {
@@ -18,12 +20,15 @@ export interface MultiWalletBalanceFetchOptions {
   blockNumber?: number;
   chainBlockNumbers?: Record<string, number>;
   includeUsd?: boolean;
+  useCache?: boolean;
+  requestedDate?: string;
 }
 
 export interface MultiWalletBalanceByTimestampOptions {
   wallets?: WalletMetadata[];
   timestamp: Date;
   includeUsd?: boolean;
+  useCache?: boolean;
 }
 
 export class BalanceFetcherService {
@@ -31,29 +36,51 @@ export class BalanceFetcherService {
   private configService: ConfigService;
   private priceService: PriceService;
   private blockService?: BlockService;
+  private firestoreAdapter: FirestoreAdapter;
 
   constructor(
     alchemyAdapter: AlchemyAdapter, 
     configService: ConfigService, 
     priceService: PriceService,
+    firestoreAdapter: FirestoreAdapter,
     blockService?: BlockService
   ) {
     this.alchemyAdapter = alchemyAdapter;
     this.configService = configService;
     this.priceService = priceService;
+    this.firestoreAdapter = firestoreAdapter;
     this.blockService = blockService;
   }
 
   async fetchBalances(options: BalanceFetchOptions): Promise<UnifiedBalance[]> {
-    const { walletAddress, chain, blockNumber, includeUsd } = options;
+    const { walletAddress, chain, blockNumber, includeUsd, useCache = true } = options;
     const blockTag = blockNumber ? `0x${blockNumber.toString(16)}` : 'latest';
     
     this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
     
     const tokens = this.configService.getTokensForChain(chain);
     
-    // Use Batch for a single wallet's tokens
-    const requests = tokens.map(token => {
+    const finalBalances: UnifiedBalance[] = [];
+    const tokensToFetch: any[] = [];
+
+    // 1. Check Cache first for each token if enabled
+    if (useCache) {
+      for (const token of tokens) {
+        const cached = await this.firestoreAdapter.getBalance(walletAddress, chain, token.id, blockNumber);
+        if (cached) {
+          finalBalances.push(cached);
+        } else {
+          tokensToFetch.push(token);
+        }
+      }
+    } else {
+      tokensToFetch.push(...tokens);
+    }
+
+    if (tokensToFetch.length === 0) return finalBalances;
+
+    // 2. Fetch missing balances from Alchemy
+    const requests = tokensToFetch.map(token => {
       if (token.type === 'native') {
         return { method: 'eth_getBalance', params: [walletAddress, blockTag] };
       } else {
@@ -64,18 +91,14 @@ export class BalanceFetcherService {
     });
 
     const batchResults = await this.alchemyAdapter.sendBatch(requests);
-    const balances: UnifiedBalance[] = [];
     
-    let blockTime: Date | undefined;
-    if (includeUsd) {
-      const block = await this.alchemyAdapter.getBlock(blockTag);
-      if (block && block.timestamp) {
-        blockTime = new Date(parseInt(block.timestamp, 16) * 1000);
-      }
-    }
+    // Resolve block timestamp
+    const block = await this.alchemyAdapter.getBlock(blockTag);
+    const blocktime = block && block.timestamp ? new Date(parseInt(block.timestamp, 16) * 1000).toISOString() : new Date().toISOString();
+    const blockTimeDate = new Date(blocktime);
 
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i]!;
+    for (let i = 0; i < tokensToFetch.length; i++) {
+      const token = tokensToFetch[i]!;
       const result = batchResults[i]?.result;
       const balanceValue = BigInt(result === '0x' || !result ? '0' : result);
       const balanceFormatted = (Number(balanceValue) / Math.pow(10, token.decimals)).toString();
@@ -90,25 +113,32 @@ export class BalanceFetcherService {
         balanceFormatted,
         decimals: token.decimals,
         blockNumber,
+        blocktime,
         updatedAt: new Date().toISOString(),
       };
 
-      if (includeUsd && blockTime) {
-        const usdPrice = await this.priceService.getPriceAtTime(token.symbol, blockTime);
+      if (includeUsd) {
+        const usdPrice = await this.priceService.getPriceAtTime(token.symbol, blockTimeDate);
         if (usdPrice !== undefined) {
           balance.usdPrice = usdPrice;
           balance.usdBalance = parseFloat(balance.balanceFormatted) * usdPrice;
         }
       }
-      balances.push(balance);
+
+      // Save to cache if enabled
+      if (useCache) {
+        await this.firestoreAdapter.saveBalance(balance);
+      }
+      finalBalances.push(balance);
     }
 
-    return balances;
+    return finalBalances;
   }
 
   async fetchMultiWalletBalances(options: MultiWalletBalanceFetchOptions): Promise<UnifiedBalance[]> {
     const wallets = options.wallets || this.configService.getWallets();
     const globalIncludeUsd = options.includeUsd !== undefined ? options.includeUsd : this.configService.getGlobalIncludeUsd();
+    const useCache = options.useCache !== undefined ? options.useCache : true;
     
     const allBalances: UnifiedBalance[] = [];
 
@@ -124,13 +154,21 @@ export class BalanceFetcherService {
     for (const [chain, chainWallets] of Object.entries(chainToWallets)) {
       this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
       const tokens = this.configService.getTokensForChain(chain);
-      
-      const chainBlockNumber = options.chainBlockNumbers?.[chain] || options.blockNumber;
-      const blockTag = chainBlockNumber ? `0x${chainBlockNumber.toString(16)}` : 'latest';
+      const blockNumber = options.chainBlockNumbers?.[chain] || options.blockNumber;
+      const blockTag = blockNumber ? `0x${blockNumber.toString(16)}` : 'latest';
 
       const requests: { method: string, params: any[], meta: { wallet: string, token: any } }[] = [];
+      
       for (const wallet of chainWallets) {
         for (const token of tokens) {
+          if (useCache) {
+            const cached = await this.firestoreAdapter.getBalance(wallet.address, chain, token.id, blockNumber);
+            if (cached) {
+              allBalances.push({ ...cached, requestedDate: options.requestedDate });
+              continue;
+            }
+          }
+
           if (token.type === 'native') {
             requests.push({ 
               method: 'eth_getBalance', 
@@ -155,13 +193,10 @@ export class BalanceFetcherService {
 
       const batchResults = await this.alchemyAdapter.sendBatch(requests.map(r => ({ method: r.method, params: r.params })));
       
-      let blockTime: Date | undefined;
-      if (globalIncludeUsd) {
-        const block = await this.alchemyAdapter.getBlock(blockTag);
-        if (block && block.timestamp) {
-          blockTime = new Date(parseInt(block.timestamp, 16) * 1000);
-        }
-      }
+      // Resolve block timestamp
+      const block = await this.alchemyAdapter.getBlock(blockTag);
+      const blocktime = block && block.timestamp ? new Date(parseInt(block.timestamp, 16) * 1000).toISOString() : new Date().toISOString();
+      const blockTimeDate = new Date(blocktime);
 
       for (let j = 0; j < requests.length; j++) {
         const req = requests[j]!;
@@ -179,16 +214,23 @@ export class BalanceFetcherService {
           balance: balanceValue.toString(),
           balanceFormatted,
           decimals: token.decimals,
-          blockNumber: chainBlockNumber,
+          blockNumber: blockNumber,
+          blocktime,
+          requestedDate: options.requestedDate,
           updatedAt: new Date().toISOString(),
         };
 
-        if (globalIncludeUsd && blockTime) {
-          const usdPrice = await this.priceService.getPriceAtTime(token.symbol, blockTime);
+        if (globalIncludeUsd) {
+          const usdPrice = await this.priceService.getPriceAtTime(token.symbol, blockTimeDate);
           if (usdPrice !== undefined) {
             balance.usdPrice = usdPrice;
             balance.usdBalance = parseFloat(balance.balanceFormatted) * usdPrice;
           }
+        }
+
+        // Save to cache if enabled
+        if (useCache) {
+          await this.firestoreAdapter.saveBalance(balance);
         }
         allBalances.push(balance);
       }
@@ -215,6 +257,8 @@ export class BalanceFetcherService {
       wallets,
       chainBlockNumbers,
       includeUsd: options.includeUsd,
+      useCache: options.useCache,
+      requestedDate: options.timestamp.toISOString(),
     });
   }
 }

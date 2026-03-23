@@ -7,9 +7,11 @@ tokens:
     chains:
       ethereum: { }
       base: { }
-      polygon: { }
       arbitrum: { }
       optimism: { }
+      linea: { }
+      ink: { }
+      scroll: { }
 
   - id: usdc
     name: USD Coin
@@ -31,11 +33,17 @@ tokens:
 chains:
   ethereum:
     allowlist: [ethereum-native, usdc]
-  base:
-    allowlist: [ethereum-native, usdc]
-  polygon:
-    allowlist: [ethereum-native, usdc]
   arbitrum:
+    allowlist: [ethereum-native, usdc]
+  base:
     allowlist: [ethereum-native, usdc]
   optimism:
     allowlist: [ethereum-native, usdc]
+  linea:
+    allowlist: [ethereum-native]
+  polygon:
+    allowlist: [usdc]
+  ink:
+    allowlist: [ethereum-native]
+  scroll:
+    allowlist: [ethereum-native]
