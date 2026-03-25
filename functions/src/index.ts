@@ -17,7 +17,7 @@ const db = admin.firestore();
 
 // Throttlers for different providers
 const moralisThrottler = new Throttler({ concurrency: 1, interval: 1000, intervalCap: 1 }); // 1 QPS
-const alchemyThrottler = new Throttler({ concurrency: 5, interval: 1000, intervalCap: 5 }); // Adjusted for Alchemy
+const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, intervalCap: 50 }); // Adjusted for Alchemy
 
 export const fetchTransactions = functions.https.onRequest(async (req, res) => {
   const { walletAddress, chain, fromBlock, toBlock } = req.query;

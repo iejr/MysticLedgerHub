@@ -14,7 +14,7 @@ export class MoralisParser implements TransactionParser {
       const unified: UnifiedTransaction = {
         txHash: tx.hash,
         blockNumber: parseInt(tx.block_number),
-        timestamp: tx.block_timestamp,
+        blockTime: tx.block_timestamp,
         chain: tx.chain || 'base',
         from: tx.from_address,
         to: tx.to_address,
@@ -23,12 +23,10 @@ export class MoralisParser implements TransactionParser {
         status: tx.receipt_status === '1' ? 'success' : 'failed',
         type: this.determineType(tx),
         method: tx.method_label || tx.input?.slice(0, 10),
-        metadata: tx,
+        rawData: tx,
       };
 
-      // Special handling for "actual" sender/receiver in complex transactions
-      // In Moralis history, for simple transfers it's clear.
-      // For proxy/complex txs, we might need to drill into tx.erc20_transfers or tx.nft_transfers
+      // Special handling for ERC20 transfers
       if (tx.erc20_transfers && tx.erc20_transfers.length > 0) {
         // Find the transfer involving our wallet
         const relevantTransfer = tx.erc20_transfers.find((t: any) => 
@@ -36,8 +34,6 @@ export class MoralisParser implements TransactionParser {
           t.to_address.toLowerCase() === walletAddress.toLowerCase()
         );
         if (relevantTransfer) {
-          unified.actualSender = relevantTransfer.from_address;
-          unified.actualReceiver = relevantTransfer.to_address;
           unified.tokenSymbol = relevantTransfer.symbol;
           unified.tokenAddress = relevantTransfer.address;
           unified.tokenDecimals = parseInt(relevantTransfer.decimals);

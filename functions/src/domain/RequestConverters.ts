@@ -33,15 +33,3 @@ export class AlchemyRequestConverter {
     };
   }
 }
-
-// export class MoralisRequestConverter {
-//   static fromFetchOptions(options: FetchOptions): MoralisFetchParams {
-//     return {
-//       address: options.walletAddress,
-//       chain: options.chain.toLowerCase() === 'ethereum' ? 'eth' : options.chain.toLowerCase(),
-//       fromBlock: options.fromBlock,
-//       toBlock: options.toBlock,
-//       order: 'DESC',
-//     };
-//   }
-// }

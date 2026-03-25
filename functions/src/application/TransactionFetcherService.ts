@@ -3,7 +3,7 @@ import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
 import { MoralisParser } from '../domain/MoralisParser.js';
 import { AlchemyParser } from '../domain/AlchemyParser.js';
-import { UnifiedTransaction } from '../domain/types.js';
+import { InternalTransaction, UnifiedTransaction } from '../domain/types.js';
 import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 
 import { BlockService } from '../domain/BlockService.js';
@@ -52,25 +52,6 @@ export class TransactionFetcherService {
 
     let allTransactions: UnifiedTransaction[] = [];
 
-    // if (chain.toLowerCase() === 'what?') {
-    //   // Use Moralis for Base chain
-    //   const moralisParams = MoralisRequestConverter.fromFetchOptions({
-    //     ...options,
-    //     walletAddress,
-    //     chain,
-    //   });
-    //   const iterator = this.moralisAdapter.getTransactionsIterator(moralisParams);
-
-    //   for await (const batch of iterator) {
-    //     const parsedBatch = this.moralisParser.parse(batch, walletAddress);
-    //     allTransactions.push(...parsedBatch);
-
-    //     for (const tx of parsedBatch) {
-    //       await this.firestoreAdapter.saveTransaction(walletAddress, tx.txHash, tx);
-    //     }
-    //   }
-    // } else {
-    //   // Use Alchemy for other chains
     const alchemyParams = AlchemyRequestConverter.fromFetchOptions({
       ...options,
       walletAddress,
@@ -97,6 +78,32 @@ export class TransactionFetcherService {
     return allTransactions;
   }
 
+  filterTransactionByAddress(transaction: UnifiedTransaction, addresses: Set<string>): boolean {
+    if (transaction?.from && addresses.has(transaction.from)) return true;
+    if (transaction?.to && addresses.has(transaction.to)) return true; 
+    if (transaction?.internalTransactions) {
+      transaction.internalTransactions.forEach((internal: InternalTransaction) => {
+        if (internal.from && addresses.has(internal.from)) return true;
+        if (internal.to && addresses.has(internal.to)) return true;
+      })
+    }
+    return false;
+  }
+
+  extractAddressfromTransaction(transaction: UnifiedTransaction): Set<string> {
+    let involvedAddresses = new Set<string>();
+    if (transaction?.from) involvedAddresses.add(transaction.from.toLowerCase());
+    if (transaction?.to) involvedAddresses.add(transaction.to.toLowerCase());
+    if (transaction?.internalTransactions) {
+      transaction.internalTransactions.forEach((internal: any) => {
+        involvedAddresses.add(internal.from.toLowerCase(0));
+        involvedAddresses.add(internal.to.toLowerCase());
+      })
+    }
+
+    return involvedAddresses;
+  }
+
   async fetchMultiWalletTransactions(options: FetchOptions): Promise<UnifiedTransaction[]> {
     const wallets = options.wallets || (options.walletAddress ? [{ address: options.walletAddress, label: 'Default' }] : []);
     const chains = options.chains || (options.chain ? [options.chain] : []);
@@ -104,9 +111,10 @@ export class TransactionFetcherService {
     if (wallets.length === 0 || chains.length === 0) {
       throw new Error('No wallets or chains specified');
     }
+    const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
 
     let allResults: UnifiedTransaction[] = [];
-    const txHashMap = new Map<string, UnifiedTransaction[]>(); // chain_txHash -> UnifiedTransaction[]
+    const txHashMap = new Map<string, UnifiedTransaction>(); // chain_txHash -> UnifiedTransaction
 
     for (const chain of chains) {
       this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
@@ -129,19 +137,18 @@ export class TransactionFetcherService {
 
       // Step 1: Discovery using trace_filter for each wallet
       for (const wallet of wallets) {
-        const traces = await this.alchemyAdapter.fetchTraceFilterTransactions({
+        const tracesFrom = await this.alchemyAdapter.fetchTraceFilterTransactions({
           fromAddress: [wallet.address.toLowerCase()],
           fromBlock: hexFromBlock,
           toBlock: hexToBlock,
         });
 
-        if (traces.result) {
-          traces.result.forEach((t: any) => {
+        if (tracesFrom.result) {
+          tracesFrom.result.forEach((t: any) => {
             if (t.transactionHash) discoveredTxHashes.add(t.transactionHash);
           });
         }
 
-        // Also check toAddress
         const tracesTo = await this.alchemyAdapter.fetchTraceFilterTransactions({
           toAddress: [wallet.address.toLowerCase()],
           fromBlock: hexFromBlock,
@@ -157,23 +164,22 @@ export class TransactionFetcherService {
 
       // Step 2 & 3: Detailed fetch and canonical caching
       const txHashesToFetch: string[] = [];
-      
+
       for (const hash of discoveredTxHashes) {
         if (options.useCache !== false) {
-          const cachedTraces = await this.firestoreAdapter.getCanonicalTransaction(chain, hash);
-          if (cachedTraces) {
-            txHashMap.set(`${chain}_${hash}`, this.alchemyParser.parseTrace(cachedTraces, chain));
+          const cachedTransactionsObj = await this.firestoreAdapter.getCanonicalTransaction(chain, hash);
+          if (cachedTransactionsObj && this.filterTransactionByAddress(cachedTransactionsObj.payload, walletSet)) {
+            txHashMap.set(`${chain}_${hash}`, cachedTransactionsObj.payload);
             continue;
           }
         }
         txHashesToFetch.push(hash);
       }
-      
+
       if (txHashesToFetch.length > 0) {
-        // We can use Alchemy batching here
-        const batchRequests = txHashesToFetch.map(hash => ({
+        const batchRequests = txHashesToFetch.map((hash) => ({
           method: 'trace_transaction',
-          params: [hash]
+          params: [hash],
         }));
 
         const batchResults = await this.alchemyAdapter.sendBatch(batchRequests);
@@ -184,28 +190,43 @@ export class TransactionFetcherService {
 
           if (res && res.result) {
             const traces = res.result;
-            const parsedTransactions = this.alchemyParser.parseTrace(traces, chain);
-            
-            // Save canonical
-            const involvedAddresses = new Set<string>();
-            traces.forEach((t: any) => {
-              if (t.action?.from) involvedAddresses.add(t.action.from.toLowerCase());
-              if (t.action?.to) involvedAddresses.add(t.action.to.toLowerCase());
-            });
+            const parsedTransaction = this.alchemyParser.parseTrace(traces, chain);
+            if (!parsedTransaction) continue;
 
-            if (options.useCache !== false) {
-              await this.firestoreAdapter.saveCanonicalTransaction(chain, txHash, traces, Array.from(involvedAddresses));
+            console.log("Naforuke debug: showing parsedTransaciton =>");
+            console.log(parsedTransaction);
+
+            // Update blockTime if block info is available
+            if (this.blockService) {
+              try {
+                const txBlockNumber = parsedTransaction.blockNumber;
+                // Note: Ideally we'd have a bulk getBlock for the whole batch
+                const block = await this.alchemyAdapter.getBlock(`0x${txBlockNumber.toString(16)}`);
+                if (block && block.timestamp) {
+                  const blockTime = new Date(parseInt(block.timestamp, 16) * 1000).toISOString();
+                  parsedTransaction.blockTime = blockTime;
+                }
+              } catch (e) {
+                console.warn(`Failed to fetch block timestamp for hash ${txHash}`, e);
+              }
             }
 
-            txHashMap.set(`${chain}_${txHash}`, parsedTransactions);
+            // Save canonical
+            const involvedAddresses = this.extractAddressfromTransaction(parsedTransaction);
+            if (options.useCache !== false) {
+              await this.firestoreAdapter.saveCanonicalTransaction(chain, txHash, parsedTransaction, Array.from(involvedAddresses));
+            }
+
+            txHashMap.set(`${chain}_${txHash}`, parsedTransaction);
           }
         }
       }
     }
 
-    // Flatten results
+    // // Flatten results and filter by relevant wallets
+    // const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
     txHashMap.forEach((txs) => {
-      allResults.push(...txs);
+      allResults.push(txs);
     });
 
     return allResults;

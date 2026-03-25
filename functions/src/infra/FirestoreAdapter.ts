@@ -96,12 +96,12 @@ export class FirestoreAdapter {
   }
 
   // Canonical Transaction Caching
-  async saveCanonicalTransaction(chain: string, txHash: string, data: any, addressesInvolved: string[]): Promise<void> {
+  async saveCanonicalTransaction(chain: string, txHash: string, payload: any, addressesInvolved: string[]): Promise<void> {
     const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
     await this.db.collection('canonical_transactions').doc(docId).set({
       chain: chain.toLowerCase(),
       txHash: txHash.toLowerCase(),
-      data,
+      payload: payload,
       addressesInvolved: addressesInvolved.map(a => a.toLowerCase()),
       updatedAt: new Date().toISOString(),
     });
@@ -110,6 +110,16 @@ export class FirestoreAdapter {
   async getCanonicalTransaction(chain: string, txHash: string): Promise<any | undefined> {
     const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
     const doc = await this.db.collection('canonical_transactions').doc(docId).get();
-    return doc.exists ? doc.data()?.data : undefined;
+    // return doc.exists ? doc.data()?.data : undefined;
+    return doc.exists ?
+      {
+        chain: doc.data()?.chain,
+        txHash: doc.data()?.txHash,
+        payload: doc.data()?.payload,
+        addressInvolved: doc.data()?.addressInvolved,
+        updatedAt: doc.data()?.updatedAt,
+      }
+      :
+      {}
   }
 }

@@ -1,9 +1,25 @@
 import { z } from 'zod';
 
+export const InternalTransactionSchema = z.object({
+  from: z.string(),
+  to: z.string().nullable(),
+  value: z.string(),
+  valueFormatted: z.string().optional(),
+  type: z.string(),
+  gas: z.string().optional(),
+  gasUsed: z.string().optional(),
+  input: z.string().optional(),
+  output: z.string().optional(),
+  traceAddress: z.array(z.number()).optional(),
+  subtraces: z.number().optional(),
+});
+
+export type InternalTransaction = z.infer<typeof InternalTransactionSchema>;
+
 export const UnifiedTransactionSchema = z.object({
   txHash: z.string(),
   blockNumber: z.number(),
-  timestamp: z.string(), // ISO 8601
+  blockTime: z.string(), // ISO 8601 (Renamed from timestamp)
   chain: z.string(),
   from: z.string(),
   to: z.string().nullable(),
@@ -17,10 +33,8 @@ export const UnifiedTransactionSchema = z.object({
   status: z.enum(['success', 'failed', 'pending', 'other']),
   type: z.enum(['external', 'internal', 'erc20', 'nft', 'other']),
   method: z.string().optional(),
-  internalTransactions: z.array(z.any()).optional(),
-  actualSender: z.string().optional(),
-  actualReceiver: z.string().optional(),
-  metadata: z.any().optional(),
+  internalTransactions: z.array(InternalTransactionSchema).optional(),
+  rawData: z.any().optional(),
 });
 
 export type UnifiedTransaction = z.infer<typeof UnifiedTransactionSchema>;
