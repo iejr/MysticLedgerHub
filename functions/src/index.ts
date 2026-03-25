@@ -212,3 +212,52 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
     res.status(500).send(error.message);
   }
 });
+
+export const fetchMultiTransactions = functions.https.onRequest(async (req, res) => {
+  const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache } = req.body;
+
+  try {
+    const moralisAdapter = new MoralisAdapter({
+      apiKey: process.env.MORALIS_API_KEY || '',
+      baseUrl: '',
+      throttler: moralisThrottler,
+    });
+
+    const alchemyAdapter = new AlchemyAdapter({
+      apiKey: process.env.ALCHEMY_API_KEY || '',
+      baseUrl: '',
+      throttler: alchemyThrottler,
+    });
+
+    const firestoreAdapter = new FirestoreAdapter(db);
+    const configService = new ConfigService();
+    const blockService = new BlockService(alchemyAdapter, firestoreAdapter, configService);
+    
+    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter, blockService);
+
+    const options: any = {
+      useCache: useCache !== false,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      fromBlock: fromBlock ? parseInt(fromBlock) : undefined,
+      toBlock: toBlock ? parseInt(toBlock) : undefined,
+      chains: chains || configService.getGlobalChains(),
+    };
+
+    if (addresses && Array.isArray(addresses)) {
+      options.wallets = addresses.map(addr => ({ address: addr, label: 'Custom' }));
+    } else {
+      options.wallets = configService.getWallets();
+    }
+
+    const transactions = await service.fetchMultiWalletTransactions(options);
+
+    res.status(200).json({
+      count: transactions.length,
+      transactions,
+    });
+  } catch (error: any) {
+    console.error('Error fetching multi transactions:', error);
+    res.status(500).send(error.message);
+  }
+});

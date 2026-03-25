@@ -81,6 +81,19 @@ export class AlchemyAdapter extends BaseAdapter {
     });
   }
 
+  async fetchTraceTransaction(txHash: string): Promise<any> {
+    return this.fetchWithRetry({
+      method: 'POST',
+      url: '',
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'trace_transaction',
+        params: [txHash],
+      },
+    });
+  }
+
   async fetchTransactions(params: AlchemyGetAssetTransferParams): Promise<any> {
     return this.fetchAssetTransferTransactions(params);
   }

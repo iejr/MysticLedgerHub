@@ -12,8 +12,8 @@ export interface AlchemyGetAssetTransferParams {
 export interface AlchemyTraceFilterParams {
   fromBlock?: string;
   toBlock?: string;
-  fromAddress?: [];
-  toAddress?: [];
+  fromAddress?: string[];
+  toAddress?: string[];
   after?: string;
   count?: number;
 }

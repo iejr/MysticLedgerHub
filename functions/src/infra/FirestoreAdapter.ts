@@ -94,4 +94,22 @@ export class FirestoreAdapter {
       timestamp,
     });
   }
+
+  // Canonical Transaction Caching
+  async saveCanonicalTransaction(chain: string, txHash: string, data: any, addressesInvolved: string[]): Promise<void> {
+    const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
+    await this.db.collection('canonical_transactions').doc(docId).set({
+      chain: chain.toLowerCase(),
+      txHash: txHash.toLowerCase(),
+      data,
+      addressesInvolved: addressesInvolved.map(a => a.toLowerCase()),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async getCanonicalTransaction(chain: string, txHash: string): Promise<any | undefined> {
+    const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
+    const doc = await this.db.collection('canonical_transactions').doc(docId).get();
+    return doc.exists ? doc.data()?.data : undefined;
+  }
 }

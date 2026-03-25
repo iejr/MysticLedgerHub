@@ -27,21 +27,21 @@ export class AlchemyRequestConverter {
   static toPriceParams(chain: string, addresses: string[]): AlchemyTokenPriceParams {
     return {
       addresses: addresses.map(addr => ({
-        network: chain.toLowerCase() === 'ethereum' ? 'eth-mainnet' : `${chain.toLowerCase()}-mainnet`,
+        network: this.getChainUrl(chain),
         address: addr,
       })),
     };
   }
 }
 
-export class MoralisRequestConverter {
-  static fromFetchOptions(options: FetchOptions): MoralisFetchParams {
-    return {
-      address: options.walletAddress,
-      chain: options.chain.toLowerCase() === 'ethereum' ? 'eth' : options.chain.toLowerCase(),
-      fromBlock: options.fromBlock,
-      toBlock: options.toBlock,
-      order: 'DESC',
-    };
-  }
-}
+// export class MoralisRequestConverter {
+//   static fromFetchOptions(options: FetchOptions): MoralisFetchParams {
+//     return {
+//       address: options.walletAddress,
+//       chain: options.chain.toLowerCase() === 'ethereum' ? 'eth' : options.chain.toLowerCase(),
+//       fromBlock: options.fromBlock,
+//       toBlock: options.toBlock,
+//       order: 'DESC',
+//     };
+//   }
+// }

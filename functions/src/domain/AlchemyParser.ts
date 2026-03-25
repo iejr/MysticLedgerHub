@@ -32,4 +32,32 @@ export class AlchemyParser implements TransactionParser {
       default: return 'other';
     }
   }
+
+  /**
+   * Transforms raw trace data into a flattened list of UnifiedTransactions.
+   * Note: This method does NOT filter by type, preserving all traces for future analysis.
+   */
+  parseTrace(traces: any[], chain: string): UnifiedTransaction[] {
+    if (!traces || traces.length === 0) return [];
+
+    const mainTrace = traces[0];
+    const txHash = mainTrace.transactionHash;
+    const blockNumber = mainTrace.blockNumber;
+
+    return traces.map((t: any) => {
+      return {
+        txHash,
+        blockNumber,
+        timestamp: new Date().toISOString(),
+        chain,
+        from: t.action.from,
+        to: t.action.to,
+        value: t.action.value || '0x0',
+        valueFormatted: t.action.value ? (BigInt(t.action.value) / BigInt(1e18)).toString() : '0',
+        status: 'success',
+        type: 'internal',
+        metadata: t,
+      };
+    });
+  }
 }
