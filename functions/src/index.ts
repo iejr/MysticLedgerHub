@@ -41,7 +41,9 @@ export const fetchTransactions = functions.https.onRequest(async (req, res) => {
     });
 
     const firestoreAdapter = new FirestoreAdapter(db);
-    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter);
+    const configService = new ConfigService();
+    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
+    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter, undefined, priceService, configService);
 
     const transactions = await service.fetchAndCache({
       walletAddress: walletAddress as string,
@@ -231,9 +233,10 @@ export const fetchMultiTransactions = functions.https.onRequest(async (req, res)
 
     const firestoreAdapter = new FirestoreAdapter(db);
     const configService = new ConfigService();
+    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
     const blockService = new BlockService(alchemyAdapter, firestoreAdapter, configService);
     
-    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter, blockService);
+    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter, blockService, priceService, configService);
 
     const options: any = {
       useCache: useCache !== false,

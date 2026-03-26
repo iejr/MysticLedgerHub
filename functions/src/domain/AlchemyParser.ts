@@ -76,7 +76,7 @@ export class AlchemyParser implements TransactionParser {
       valueFormatted: mainTrace.action?.value ? (formatUnits(BigInt(mainTrace.action.value), decimals)).toString() : '0',
       gasUsed: BigInt(mainTrace.result?.gasUsed).toString(10),
       status: mainTrace.error ? 'failed' : 'success',
-      type: 'internal',
+      type: 'regular',
       internalTransactions,
       rawData: traces,
     };

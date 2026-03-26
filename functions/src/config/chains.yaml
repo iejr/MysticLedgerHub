@@ -1,5 +1,6 @@
 ethereum:
   chainId: 1
+  nativeSymbol: ETH
   name: Ethereum Mainnet
   averageBlockTime: 12.1
   startBlock: 20000000
@@ -7,6 +8,7 @@ ethereum:
 
 abstract:
   chainId: 2741
+  nativeSymbol: ETH
   name: Abstract
   averageBlockTime: 0.5
   startBlock: 0
@@ -14,6 +16,7 @@ abstract:
 
 arbitrum:
   chainId: 42161
+  nativeSymbol: ETH
   name: Arbitrum One
   averageBlockTime: 0.25
   startBlock: 0
@@ -21,6 +24,7 @@ arbitrum:
 
 avax:
   chainId: 43114
+  nativeSymbol: AVAX
   name: Avalanche
   averageBlockTime: 1.0
   startBlock: 0
@@ -28,6 +32,7 @@ avax:
 
 base:
   chainId: 8453
+  nativeSymbol: ETH
   name: Base
   averageBlockTime: 2.0
   startBlock: 0
@@ -35,6 +40,7 @@ base:
 
 bnb:
   chainId: 56
+  nativeSymbol: BNB
   name: BNB Chain
   averageBlockTime: 0.45
   startBlock: 0
@@ -42,6 +48,7 @@ bnb:
 
 optimism:
   chainId: 10
+  nativeSymbol: ETH
   name: Optimism
   averageBlockTime: 2.0
   startBlock: 0
@@ -49,6 +56,7 @@ optimism:
 
 polygon:
   chainId: 137
+  nativeSymbol: MATIC
   name: Polygon
   averageBlockTime: 2.1
   startBlock: 0
@@ -56,12 +64,14 @@ polygon:
 
 zkSync:
   chainId: 130
+  nativeSymbol: ETH
   name: ZKsync
   startBlock: 0
   explorerUrl: https://explorer.zksync.io/
 
 zora: 
   chainId: 7777777
+  nativeSymbol: ETH
   name: Zora
   averageBlockTime: 2.0
   startBlock: 0
@@ -69,6 +79,7 @@ zora:
 
 blast:
   chainId: 81457
+  nativeSymbol: ETH
   name: Blast
   averageBlockTime: 2.0
   startBlock: 0
@@ -76,6 +87,7 @@ blast:
 
 scroll:
   chainId: 534352
+  nativeSymbol: ETH
   name: Scroll
   averageBlockTime: 3.0
   startBlock: 0
@@ -83,6 +95,7 @@ scroll:
 
 linea:
   chainId: 59144
+  nativeSymbol: ETH
   name: Linea
   averageBlockTime: 2.2
   startBlock: 0
@@ -90,6 +103,7 @@ linea:
 
 ink:
   chainId: 57073
+  nativeSymbol: ETH
   name: Ink
   averageBlockTime: 1.0
   startBlock: 0

@@ -7,6 +7,8 @@ import { InternalTransaction, UnifiedTransaction } from '../domain/types.js';
 import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 
 import { BlockService } from '../domain/BlockService.js';
+import { PriceService } from '../domain/PriceService.js';
+import { ConfigService } from '../domain/ConfigService.js';
 
 export interface FetchOptions {
   walletAddress?: string;
@@ -25,6 +27,8 @@ export class TransactionFetcherService {
   private alchemyAdapter: AlchemyAdapter;
   private firestoreAdapter: FirestoreAdapter;
   private blockService?: BlockService;
+  private priceService?: PriceService;
+  private configService?: ConfigService;
   private moralisParser: MoralisParser;
   private alchemyParser: AlchemyParser;
 
@@ -32,12 +36,16 @@ export class TransactionFetcherService {
     moralisAdapter: MoralisAdapter,
     alchemyAdapter: AlchemyAdapter,
     firestoreAdapter: FirestoreAdapter,
-    blockService?: BlockService
+    blockService?: BlockService,
+    priceService?: PriceService,
+    configService?: ConfigService
   ) {
     this.moralisAdapter = moralisAdapter;
     this.alchemyAdapter = alchemyAdapter;
     this.firestoreAdapter = firestoreAdapter;
     this.blockService = blockService;
+    this.priceService = priceService;
+    this.configService = configService;
     this.moralisParser = new MoralisParser();
     this.alchemyParser = new AlchemyParser();
   }
@@ -193,6 +201,14 @@ export class TransactionFetcherService {
             const parsedTransaction = this.alchemyParser.parseTrace(traces, chain);
             if (!parsedTransaction) continue;
 
+            // Resolve symbol for pricing
+            let symbol = parsedTransaction.tokenSymbol;
+            if (!symbol && this.configService) {
+              const meta = this.configService.getChainMetadata(chain);
+              if (meta) symbol = meta.nativeSymbol;
+            }
+            if (!symbol) symbol = 'ETH'; // Ultimate fallback
+
             // Update blockTime if block info is available
             if (this.blockService) {
               try {
@@ -208,6 +224,29 @@ export class TransactionFetcherService {
               }
             }
 
+            // Enrich with USD Price and Values
+            if (this.priceService) {
+              try {
+                const usdPrice = await this.priceService.getPriceAtTime(symbol, new Date(parsedTransaction.blockTime));
+                if (usdPrice !== undefined) {
+                  parsedTransaction.usdPrice = usdPrice;
+                  if (parsedTransaction.valueFormatted) {
+                    parsedTransaction.usdValue = parseFloat(parsedTransaction.valueFormatted) * usdPrice;
+                  }
+
+                  if (parsedTransaction.internalTransactions) {
+                    for (const internal of parsedTransaction.internalTransactions) {
+                      if (internal.valueFormatted) {
+                        internal.usdValue = parseFloat(internal.valueFormatted) * usdPrice;
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn(`Failed to fetch USD price for ${symbol} at ${parsedTransaction.blockTime}`, e);
+              }
+            }
+
             // Save canonical
             const involvedAddresses = this.extractAddressfromTransaction(parsedTransaction);
             if (options.useCache !== false) {
@@ -220,10 +259,11 @@ export class TransactionFetcherService {
       }
     }
 
-    // // Flatten results and filter by relevant wallets
-    // const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
+    // Flatten results and filter by relevant wallets
     txHashMap.forEach((txs) => {
-      allResults.push(txs);
+      // Remove rawData from the final response to save some workload
+      const { rawData, ...refinedTxs } = txs;
+      allResults.push(refinedTxs);
     });
 
     return allResults;

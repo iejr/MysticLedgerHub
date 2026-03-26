@@ -38,6 +38,7 @@ export interface WalletConfig {
 
 export interface ChainMetadata {
   name: string;
+  nativeSymbol: string;
   averageBlockTime: number;
   startBlock: number;
   explorerUrl: string;

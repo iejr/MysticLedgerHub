@@ -13,22 +13,22 @@ export class PriceService {
   async getPriceAtTime(symbol: string, targetTime: Date): Promise<number | undefined> {
     const targetISO = targetTime.toISOString();
     
-    // 1. Check Cache (Look for a range of +/- 1 hour around the target time)
-    const startTime = new Date(targetTime.getTime() - 60 * 60 * 1000).toISOString();
-    const endTime = new Date(targetTime.getTime() + 60 * 60 * 1000).toISOString();
+    // 1. Check Cache (Look for a range of +/- 10 min around the target time)
+    const startTime = new Date(targetTime.getTime() - 10 * 60 * 1000).toISOString();
+    const endTime = new Date(targetTime.getTime() + 10 * 60 * 1000).toISOString();
     
     let cachedPrices = await this.firestoreAdapter.getPricesInRange(symbol, startTime, endTime);
     
     if (cachedPrices.length === 0) {
-      // 2. Fetch from Alchemy if not in cache (fetch +/- 1 day range to populate cache)
-      const fetchStart = new Date(targetTime.getTime() - 24 * 60 * 60 * 1000).toISOString();
-      const fetchEnd = new Date(targetTime.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      // 2. Fetch from Alchemy if not in cache (fetch +/- 1 hour range to populate cache)
+      const fetchStart = new Date(targetTime.getTime() - 60 * 60 * 1000).toISOString();
+      const fetchEnd = new Date(targetTime.getTime() + 60 * 60 * 1000).toISOString();
       
       const response = await this.alchemyAdapter.fetchHistoricalPrices({
         symbol,
         startTime: fetchStart,
         endTime: fetchEnd,
-        interval: '1h', // Use 1 hour interval for efficiency
+        interval: '5m', // Use 5 min interval for accuracy
       });
 
       if (response) {

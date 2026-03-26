@@ -12,6 +12,7 @@ export const InternalTransactionSchema = z.object({
   output: z.string().optional(),
   traceAddress: z.array(z.number()).optional(),
   subtraces: z.number().optional(),
+  usdValue: z.number().optional(),
 });
 
 export type InternalTransaction = z.infer<typeof InternalTransactionSchema>;
@@ -31,9 +32,11 @@ export const UnifiedTransactionSchema = z.object({
   gasPrice: z.string().optional(),
   gasUsed: z.string().optional(),
   status: z.enum(['success', 'failed', 'pending', 'other']),
-  type: z.enum(['external', 'internal', 'erc20', 'nft', 'other']),
+  type: z.enum(['regular', 'erc20', 'nft', 'other']),
   method: z.string().optional(),
   internalTransactions: z.array(InternalTransactionSchema).optional(),
+  usdPrice: z.number().optional(),
+  usdValue: z.number().optional(),
   rawData: z.any().optional(),
 });
 
