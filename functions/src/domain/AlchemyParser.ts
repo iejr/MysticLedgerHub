@@ -1,3 +1,4 @@
+import { formatUnits } from "ethers";
 import { UnifiedTransaction, TransactionParser, InternalTransaction } from './types.js';
 
 export class AlchemyParser implements TransactionParser {
@@ -53,11 +54,11 @@ export class AlchemyParser implements TransactionParser {
       .map((t: any) => ({
         from: t.action?.from,
         to: t.action?.to || t.action?.address,
-        value: t.action?.value || '0x0',
-        valueFormatted: t.action?.value ? (BigInt(t.action.value) / BigInt(10 ** decimals)).toString() : '0',
-        type: t.type,
-        gas: t.action?.gas,
-        gasUsed: t.result?.gasUsed,
+        value: BigInt(t.action?.value).toString(10) || '0x0',
+        valueFormatted: t.action?.value ? (formatUnits(BigInt(t.action.value), decimals)).toString() : '0',
+        type: t.action?.callType,
+        gas: BigInt(t.action?.gas).toString(10),
+        gasUsed: BigInt(t.result?.gasUsed).toString(10),
         input: t.action?.input,
         output: t.result?.output,
         traceAddress: t.traceAddress,
@@ -71,8 +72,9 @@ export class AlchemyParser implements TransactionParser {
       chain,
       from: mainTrace.action?.from,
       to: mainTrace.action?.to || mainTrace.action?.address,
-      value: mainTrace.action?.value || '0x0',
-      valueFormatted: mainTrace.action?.value ? (BigInt(mainTrace.action.value) / BigInt(10 ** decimals)).toString() : '0',
+      value: BigInt(mainTrace.action?.value).toString(10) || '0x0',
+      valueFormatted: mainTrace.action?.value ? (formatUnits(BigInt(mainTrace.action.value), decimals)).toString() : '0',
+      gasUsed: BigInt(mainTrace.result?.gasUsed).toString(10),
       status: mainTrace.error ? 'failed' : 'success',
       type: 'internal',
       internalTransactions,

@@ -193,9 +193,6 @@ export class TransactionFetcherService {
             const parsedTransaction = this.alchemyParser.parseTrace(traces, chain);
             if (!parsedTransaction) continue;
 
-            console.log("Naforuke debug: showing parsedTransaciton =>");
-            console.log(parsedTransaction);
-
             // Update blockTime if block info is available
             if (this.blockService) {
               try {
