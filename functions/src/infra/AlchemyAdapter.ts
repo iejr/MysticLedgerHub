@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { BaseAdapter, AdapterConfig } from './BaseAdapter.js';
 import { 
   AlchemyGetAssetTransferParams, 
@@ -28,6 +29,7 @@ export class AlchemyAdapter extends BaseAdapter {
   // JSON-RPC Batching support with internal chunking and order guarantee
   async sendBatch(requests: { method: string, params: any[] }[]): Promise<any[]> {
     const allResults: any[] = new Array(requests.length);
+    logger.info(`Sending batch of ${requests.length} requests in chunks of ${this.CHUNK_SIZE}...`);
     
     for (let i = 0; i < requests.length; i += this.CHUNK_SIZE) {
       const chunk = requests.slice(i, i + this.CHUNK_SIZE);
@@ -56,6 +58,7 @@ export class AlchemyAdapter extends BaseAdapter {
   }
 
   async fetchAssetTransferTransactions(params: AlchemyGetAssetTransferParams): Promise<any> {
+    logger.info(`Fetching asset transfers: ${params.fromAddress || params.toAddress} (${params.category})`);
     return this.fetchWithRetry({
       method: 'POST',
       url: '',
@@ -69,6 +72,7 @@ export class AlchemyAdapter extends BaseAdapter {
   }
 
   async fetchTraceFilterTransactions(params: AlchemyTraceFilterParams): Promise<any> {
+    logger.info(`Fetching trace filter for: ${params.fromAddress || params.toAddress}`);
     return this.fetchWithRetry({
       method: 'POST',
       url: '',

@@ -21,6 +21,7 @@ const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, interv
 
 export const fetchTransactions = functions.https.onRequest(async (req, res) => {
   const { walletAddress, chain, fromBlock, toBlock } = req.query;
+  functions.logger.info('fetchTransactions requested', { walletAddress, chain, fromBlock, toBlock });
 
   if (!walletAddress || !chain) {
     res.status(400).send('Missing walletAddress or chain');
@@ -64,6 +65,7 @@ export const fetchTransactions = functions.https.onRequest(async (req, res) => {
 
 export const fetchBalances = functions.https.onRequest(async (req, res) => {
   const { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache } = req.query;
+  functions.logger.info('fetchBalances requested', { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache });
 
   if (!walletAddress || !chain) {
     res.status(400).send('Missing walletAddress or chain');
@@ -112,6 +114,7 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
 
 export const fetchMultiBalances = functions.https.onRequest(async (req, res) => {
   const { addresses, blockNumber, chainBlockNumbers, includeUsd, exportCsv, useCache } = req.body;
+  functions.logger.info('fetchMultiBalances requested', { addresses, blockNumber, includeUsd, exportCsv, useCache });
 
   try {
     const alchemyAdapter = new AlchemyAdapter({
@@ -159,6 +162,7 @@ export const fetchMultiBalances = functions.https.onRequest(async (req, res) => 
 
 export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (req, res) => {
   const { addresses, timestamp, includeUsd, exportCsv, useCache } = req.body;
+  functions.logger.info('fetchMultiBalancesByTimestamp requested', { addresses, timestamp, includeUsd, exportCsv, useCache });
 
   try {
     const alchemyAdapter = new AlchemyAdapter({
@@ -217,6 +221,7 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
 
 export const fetchMultiTransactions = functions.https.onRequest(async (req, res) => {
   const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache } = req.body;
+  functions.logger.info('fetchMultiTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache });
 
   try {
     const moralisAdapter = new MoralisAdapter({

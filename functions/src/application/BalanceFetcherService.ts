@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { ConfigService, WalletMetadata } from '../domain/ConfigService.js';
 import { UnifiedBalance } from '../domain/types.js';
@@ -54,6 +55,7 @@ export class BalanceFetcherService {
 
   async fetchBalances(options: BalanceFetchOptions): Promise<UnifiedBalance[]> {
     const { walletAddress, chain, blockNumber, includeUsd, useCache = true } = options;
+    logger.info(`Fetching balances for ${walletAddress} on ${chain}`, { blockNumber, includeUsd, useCache });
     const blockTag = blockNumber ? `0x${blockNumber.toString(16)}` : 'latest';
     
     this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
@@ -68,6 +70,7 @@ export class BalanceFetcherService {
       for (const token of tokens) {
         const cached = await this.firestoreAdapter.getBalance(walletAddress, chain, token.id, blockNumber);
         if (cached) {
+          logger.info(`Found cached balance for ${token.symbol}`);
           finalBalances.push(cached);
         } else {
           tokensToFetch.push(token);
@@ -77,9 +80,13 @@ export class BalanceFetcherService {
       tokensToFetch.push(...tokens);
     }
 
-    if (tokensToFetch.length === 0) return finalBalances;
+    if (tokensToFetch.length === 0) {
+      logger.info(`All balances for ${walletAddress} on ${chain} served from cache.`);
+      return finalBalances;
+    }
 
     // 2. Fetch missing balances from Alchemy
+    logger.info(`Fetching ${tokensToFetch.length} balances from Alchemy for ${walletAddress} on ${chain}...`);
     const requests = tokensToFetch.map(token => {
       if (token.type === 'native') {
         return { method: 'eth_getBalance', params: [walletAddress, blockTag] };
@@ -132,6 +139,7 @@ export class BalanceFetcherService {
       finalBalances.push(balance);
     }
 
+    logger.info(`Successfully fetched and enriched ${finalBalances.length} balances for ${walletAddress} on ${chain}`);
     return finalBalances;
   }
 

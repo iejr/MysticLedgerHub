@@ -1,6 +1,7 @@
 import { MoralisAdapter } from '../infra/MoralisAdapter.js';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
+import { logger } from 'firebase-functions';
 import { MoralisParser } from '../domain/MoralisParser.js';
 import { AlchemyParser } from '../domain/AlchemyParser.js';
 import { InternalTransaction, UnifiedTransaction } from '../domain/types.js';
@@ -121,18 +122,29 @@ export class TransactionFetcherService {
     }
     const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
 
+    logger.info(`Starting fetchMultiWalletTransactions for ${wallets.length} wallets and ${chains.length} chains`, {
+      chains,
+      wallets: wallets.map(w => w.address),
+      options
+    });
+
     let allResults: UnifiedTransaction[] = [];
     const txHashMap = new Map<string, UnifiedTransaction>(); // chain_txHash -> UnifiedTransaction
 
     for (const chain of chains) {
+      logger.info(`Processing chain: ${chain}`);
       this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
 
       // 1. Resolve block range
       const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
+      logger.info(`Resolved block range for ${chain}: ${hexFromBlock} to ${hexToBlock}`);
 
       // 2. Discover transaction hashes and explicit ERC20 transfers
       const discoveredTxHashes = await this.discoverTraceHashes(wallets, hexFromBlock, hexToBlock);
+      logger.info(`Discovered ${discoveredTxHashes.size} unique trace hashes for ${chain}`);
+
       await this.discoverERC20Transfers(chain, wallets, hexFromBlock, hexToBlock, txHashMap, options);
+      logger.info(`Completed ERC20 discovery for ${chain}. Current total txs: ${txHashMap.size}`);
 
       // 3. Fetch detailed traces and enrich
       await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
@@ -208,6 +220,7 @@ export class TransactionFetcherService {
     txHashMap: Map<string, UnifiedTransaction>,
     options: FetchOptions
   ): Promise<void> {
+    logger.info(`Discovering ERC20 transfers for ${chain}...`);
     const allowedTokens = this.configService ? this.configService.getTokensForChain(chain) : [];
     const allowedTokenAddresses = new Set(allowedTokens.map(t => {
       const addr = t.chains[chain.toLowerCase()]?.address;
@@ -248,6 +261,7 @@ export class TransactionFetcherService {
                 await this.firestoreAdapter.saveCanonicalTransaction(chain, tx.txHash, tx, Array.from(involvedAddresses));
               }
               txHashMap.set(`${chain}_${tx.txHash}`, tx);
+              logger.info(`Discovered and enriched ERC20 transfer: ${tx.txHash} (${tx.tokenSymbol})`);
             }
           }
         }
@@ -276,6 +290,7 @@ export class TransactionFetcherService {
     }
 
     if (txHashesToFetch.length > 0) {
+      logger.info(`Fetching ${txHashesToFetch.length} trace_transaction results for ${chain}...`);
       const batchRequests = txHashesToFetch.map((hash) => ({
         method: 'trace_transaction',
         params: [hash],
@@ -294,6 +309,8 @@ export class TransactionFetcherService {
 
           // Resolve blockTime and enrichment
           await this.enrichTraceTransaction(chain, txHash, parsedTransaction);
+
+          logger.info(`Enriched trace transaction: ${txHash} (${parsedTransaction.blockTime})`);
 
           const involvedAddresses = this.extractAddressfromTransaction(parsedTransaction);
           if (options.useCache !== false) {
