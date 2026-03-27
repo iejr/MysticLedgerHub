@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import admin from 'firebase-admin';
 import { Throttler } from './infra/Throttler.js';
 import { MoralisAdapter } from './infra/MoralisAdapter.js';
@@ -19,7 +19,9 @@ const db = admin.firestore();
 const moralisThrottler = new Throttler({ concurrency: 1, interval: 1000, intervalCap: 1 }); // 1 QPS
 const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, intervalCap: 50 }); // Adjusted for Alchemy
 
-export const fetchTransactions = functions.https.onRequest(async (req, res) => {
+export const fetchTransactions = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onRequest(async (req, res) => {
   const { walletAddress, chain, fromBlock, toBlock } = req.query;
   functions.logger.info('fetchTransactions requested', { walletAddress, chain, fromBlock, toBlock });
 
@@ -219,7 +221,9 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
   }
 });
 
-export const fetchMultiTransactions = functions.https.onRequest(async (req, res) => {
+export const fetchMultiTransactions = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onRequest(async (req, res) => {
   const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache } = req.body;
   functions.logger.info('fetchMultiTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache });
 

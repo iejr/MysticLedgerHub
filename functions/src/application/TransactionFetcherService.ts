@@ -209,6 +209,9 @@ export class TransactionFetcherService {
       }
     }
 
+    //Naforuke debug
+    console.log(discoveredTxHashes);
+
     return discoveredTxHashes;
   }
 
