@@ -45,11 +45,11 @@ export class MoralisParser implements TransactionParser {
     });
   }
 
-  private determineType(tx: any): 'external' | 'internal' | 'erc20' | 'nft' | 'other' {
+  private determineType(tx: any): 'regular' | 'erc20' | 'nft' | 'other' {
     if (tx.erc20_transfers && tx.erc20_transfers.length > 0) return 'erc20';
     if (tx.nft_transfers && tx.nft_transfers.length > 0) return 'nft';
     // If it's a native transfer with value but no contract call
-    if (tx.value !== '0' && (!tx.input || tx.input === '0x')) return 'external';
+    if (tx.value !== '0' && (!tx.input || tx.input === '0x')) return 'regular';
     return 'other';
   }
 }

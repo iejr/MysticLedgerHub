@@ -131,19 +131,27 @@ export class TransactionFetcherService {
       let fromBlock = options.fromBlock;
       let toBlock = options.toBlock;
 
-      if (options.startDate && this.blockService) {
-        fromBlock = await this.blockService.findBlockByTimestamp(chain, options.startDate);
-      }
-      if (options.endDate && this.blockService) {
-        toBlock = await this.blockService.findBlockByTimestamp(chain, options.endDate);
+      // Use timestamp range if block range is not specified
+      if (!fromBlock && !toBlock) {
+        if (options.startDate && this.blockService) {
+          fromBlock = await this.blockService.findBlockByTimestamp(chain, options.startDate);
+        }
+        if (options.endDate && this.blockService) {
+          toBlock = await this.blockService.findBlockByTimestamp(chain, options.endDate);
+        }
       }
 
       const hexFromBlock = fromBlock ? `0x${fromBlock.toString(16)}` : '0x0';
       const hexToBlock = toBlock ? `0x${toBlock.toString(16)}` : 'latest';
 
       const discoveredTxHashes = new Set<string>();
+      const allowedTokens = this.configService ? this.configService.getTokensForChain(chain) : [];
+      const allowedTokenAddresses = new Set(allowedTokens.map(t => {
+        const addr = t.chains[chain.toLowerCase()]?.address;
+        return addr ? addr.toLowerCase() : '';
+      }).filter(a => a !== ''));
 
-      // Step 1: Discovery using trace_filter for each wallet
+      // Step 1: Discovery using trace_filter and alchemy_getAssetTransfers for each wallet
       for (const wallet of wallets) {
         const tracesFrom = await this.alchemyAdapter.fetchTraceFilterTransactions({
           fromAddress: [wallet.address.toLowerCase()],
@@ -168,9 +176,54 @@ export class TransactionFetcherService {
             if (t.transactionHash) discoveredTxHashes.add(t.transactionHash);
           });
         }
+
+        // Step 1b: Discovery using alchemy_getAssetTransfers for ERC20
+        const assetTransferParams = {
+          fromBlock: hexFromBlock,
+          toBlock: hexToBlock,
+          toAddress: wallet.address.toLowerCase(),
+          category: ['erc20'],
+          withMetadata: true,
+        };
+
+        const iterator = this.alchemyAdapter.getTransactionsIterator(assetTransferParams as any);
+        for await (const transfers of iterator) {
+          const parsedTransfers = this.alchemyParser.parse(transfers, wallet.address);
+          for (const tx of parsedTransfers) {
+            // Filter by allowed tokens to avoid spam
+            if (tx.tokenAddress && allowedTokenAddresses.has(tx.tokenAddress.toLowerCase())) {
+              tx.chain = chain;
+              
+              // Resolve symbol for pricing
+              const symbol = tx.tokenSymbol || 'ETH';
+
+              // Enrich with USD Price and Values
+              if (this.priceService) {
+                try {
+                  const usdPrice = await this.priceService.getPriceAtTime(symbol, new Date(tx.blockTime));
+                  if (usdPrice !== undefined) {
+                    tx.usdPrice = usdPrice;
+                    if (tx.valueFormatted) {
+                      tx.usdValue = parseFloat(tx.valueFormatted) * usdPrice;
+                    }
+                  }
+                } catch (e) {
+                  console.warn(`Failed to fetch USD price for ${symbol} at ${tx.blockTime}`, e);
+                }
+              }
+
+              // Save to cache/map
+              if (options.useCache !== false) {
+                const involvedAddresses = this.extractAddressfromTransaction(tx);
+                await this.firestoreAdapter.saveCanonicalTransaction(chain, tx.txHash, tx, Array.from(involvedAddresses));
+              }
+              txHashMap.set(`${chain}_${tx.txHash}`, tx);
+            }
+          }
+        }
       }
 
-      // Step 2 & 3: Detailed fetch and canonical caching
+      // Step 2 & 3: Detailed fetch and canonical caching for discovered traces
       const txHashesToFetch: string[] = [];
 
       for (const hash of discoveredTxHashes) {

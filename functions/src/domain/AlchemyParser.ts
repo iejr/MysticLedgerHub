@@ -16,6 +16,7 @@ export class AlchemyParser implements TransactionParser {
         valueFormatted: tx.value?.toString() || '0',
         tokenSymbol: tx.asset,
         tokenAddress: tx.rawContract?.address,
+        tokenDecimals: tx.rawContract?.decimal ? parseInt(tx.rawContract.decimal, 16) : undefined,
         status: 'success', // Alchemy asset transfers usually only include successful ones
         type: this.mapCategoryToType(tx.category),
         rawData: tx,
@@ -23,10 +24,10 @@ export class AlchemyParser implements TransactionParser {
     });
   }
 
-  private mapCategoryToType(category: string): 'external' | 'internal' | 'erc20' | 'nft' | 'other' {
+  private mapCategoryToType(category: string): 'regular' | 'erc20' | 'nft' | 'other' {
     switch (category) {
-      case 'external': return 'external';
-      case 'internal': return 'internal';
+      case 'external': return 'regular';
+      case 'internal': return 'regular';
       case 'erc20': return 'erc20';
       case 'erc721':
       case 'erc1155': return 'nft';
