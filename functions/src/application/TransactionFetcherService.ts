@@ -129,11 +129,18 @@ export class TransactionFetcherService {
     }
     const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
 
-    logger.info(`Starting fetchMultiWalletTransactionsDetail for ${wallets.length} wallets and ${chains.length} chains`, {
-      chains,
-      wallets: wallets.map((w) => w.address),
-      options,
-    });
+    const auxAddresses = this.configService?.getAuxiliaryAddresses() || [];
+    const discoveryAddresses = [...wallets, ...auxAddresses];
+
+    logger.info(
+      `Starting fetchMultiWalletTransactionsDetail for ${wallets.length} wallets (+ ${auxAddresses.length} auxiliary) and ${chains.length} chains`,
+      {
+        chains,
+        wallets: wallets.map((w) => w.address),
+        auxAddresses: auxAddresses.map((w) => w.address),
+        options,
+      }
+    );
 
     const allResults: UnifiedTransaction[] = [];
     const txHashMap = new Map<string, UnifiedTransaction>();
@@ -145,10 +152,10 @@ export class TransactionFetcherService {
       const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
       logger.info(`Resolved block range for ${chain}: ${hexFromBlock} to ${hexToBlock}`);
 
-      const discoveredTxHashes = await this.discoverTraceHashes(wallets, hexFromBlock, hexToBlock);
+      const discoveredTxHashes = await this.discoverTraceHashes(discoveryAddresses, hexFromBlock, hexToBlock);
       logger.info(`Discovered ${discoveredTxHashes.size} unique trace hashes for ${chain}`);
 
-      await this.discoverERC20Transfers(chain, wallets, hexFromBlock, hexToBlock, txHashMap, options);
+      await this.discoverERC20Transfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, txHashMap, options);
       logger.info(`Completed ERC20 discovery for ${chain}. Current total txs: ${txHashMap.size}`);
 
       await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
@@ -162,39 +169,42 @@ export class TransactionFetcherService {
   }
 
   async fetchMultiWalletTransactionsFast(options: FetchOptions): Promise<UnifiedTransaction[]> {
-    const wallets = options.wallets || (options.walletAddress ? [{ address: options.walletAddress, label: 'Default' }] : []);
+    const wallets = options.wallets || (options.walletAddress ? [{ address: options.walletAddress, label: "Default" }] : []);
     const chains = options.chains || (options.chain ? [options.chain] : []);
 
     if (wallets.length === 0 || chains.length === 0) {
-      throw new Error('No wallets or chains specified');
+      throw new Error("No wallets or chains specified");
     }
     const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
 
-    logger.info(`Starting fetchMultiWalletTransactionsFast for ${wallets.length} wallets and ${chains.length} chains`, {
-      chains,
-      wallets: wallets.map(w => w.address),
-      options
-    });
+    const auxAddresses = this.configService?.getAuxiliaryAddresses() || [];
+    const discoveryAddresses = [...wallets, ...auxAddresses];
 
-    let allResults: UnifiedTransaction[] = [];
-    const txHashMap = new Map<string, UnifiedTransaction>(); // chain_txHash -> UnifiedTransaction
+    logger.info(
+      `Starting fetchMultiWalletTransactionsFast for ${wallets.length} wallets (+ ${auxAddresses.length} auxiliary) and ${chains.length} chains`,
+      {
+        chains,
+        wallets: wallets.map((w) => w.address),
+        auxAddresses: auxAddresses.map((w) => w.address),
+        options,
+      }
+    );
+
+    const allResults: UnifiedTransaction[] = [];
+    const txHashMap = new Map<string, UnifiedTransaction>();
 
     for (const chain of chains) {
       logger.info(`Processing chain (Fast): ${chain}`);
       this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
 
-      // 1. Resolve block range
       const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
 
-      // 2. Discover transaction hashes (external + erc20)
-      const discoveredTxHashes = await this.discoverAssetTransfers(chain, wallets, hexFromBlock, hexToBlock, txHashMap, options);
+      const discoveredTxHashes = await this.discoverAssetTransfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, txHashMap, options);
       logger.info(`Discovered ${discoveredTxHashes.size} unique hashes for ${chain} via Fast discovery`);
 
-      // 3. Fetch detailed traces and enrich (merges with asset transfers already in txHashMap)
       await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
     }
 
-    // Flatten results
     txHashMap.forEach((txs) => {
       allResults.push(txs);
     });

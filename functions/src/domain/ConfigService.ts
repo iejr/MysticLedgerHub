@@ -33,6 +33,7 @@ export interface GlobalConfig {
 
 export interface WalletConfig {
   global: GlobalConfig;
+  auxiliaryAddresses: WalletMetadata[];
   wallets: WalletMetadata[];
 }
 
@@ -82,6 +83,10 @@ export class ConfigService {
   // Wallet Methods
   getWallets(): WalletMetadata[] {
     return this.walletConfig.wallets;
+  }
+
+  getAuxiliaryAddresses(): WalletMetadata[] {
+    return this.walletConfig.auxiliaryAddresses;
   }
 
   getGlobalChains(): string[] {
