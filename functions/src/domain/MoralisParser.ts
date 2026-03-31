@@ -1,47 +1,51 @@
-import { UnifiedTransaction, TransactionParser } from './types.js';
+import {
+  UnifiedTransaction,
+  TransactionParser,
+  NativeTransfer,
+  TokenTransfer,
+} from "./types.js";
 
 export class MoralisParser implements TransactionParser {
   parse(rawData: any, walletAddress: string): UnifiedTransaction[] {
     const history = rawData as any[];
     return history.map((tx) => {
-      // Moralis wallet history already aggregates a lot of data.
-      // For complex transactions, we can look at internal_transactions if available
-      // or the primary move of value.
-      
-      const isSender = tx.from_address.toLowerCase() === walletAddress.toLowerCase();
-      
-      // Basic mapping
-      const unified: UnifiedTransaction = {
-        txHash: tx.hash,
-        blockNumber: parseInt(tx.block_number),
-        blockTime: tx.block_timestamp,
-        chain: tx.chain || 'base',
-        from: tx.from_address,
-        to: tx.to_address,
-        value: tx.value,
-        valueFormatted: tx.value_decimal,
-        status: tx.receipt_status === '1' ? 'success' : 'failed',
-        type: this.determineType(tx),
-        method: tx.method_label || tx.input?.slice(0, 10),
-        rawData: tx,
-      };
+      const nativeTransfers: NativeTransfer[] = [];
+      const tokenTransfers: TokenTransfer[] = [];
 
-      // Special handling for ERC20 transfers
+      // Map native transfer if value > 0
+      if (tx.value && tx.value !== "0") {
+        nativeTransfers.push({
+          from: tx.from_address,
+          to: tx.to_address || null,
+          value: tx.value,
+          valueFormatted: tx.value_decimal,
+        });
+      }
+
+      // Map ERC20 transfers
       if (tx.erc20_transfers && tx.erc20_transfers.length > 0) {
-        // Find the transfer involving our wallet
-        const relevantTransfer = tx.erc20_transfers.find((t: any) => 
-          t.from_address.toLowerCase() === walletAddress.toLowerCase() || 
-          t.to_address.toLowerCase() === walletAddress.toLowerCase()
-        );
-        if (relevantTransfer) {
-          unified.tokenSymbol = relevantTransfer.symbol;
-          unified.tokenAddress = relevantTransfer.address;
-          unified.tokenDecimals = parseInt(relevantTransfer.decimals);
-          unified.valueFormatted = relevantTransfer.value_decimal;
+        for (const t of tx.erc20_transfers) {
+          tokenTransfers.push({
+            from: t.from_address,
+            to: t.to_address,
+            value: t.value,
+            valueFormatted: t.value_decimal,
+            tokenSymbol: t.symbol,
+            tokenAddress: t.address,
+            tokenDecimals: parseInt(t.decimals),
+          });
         }
       }
 
-      return unified;
+      return {
+        txHash: tx.hash,
+        blockNumber: parseInt(tx.block_number),
+        blockTime: tx.block_timestamp,
+        chain: tx.chain || "base",
+        status: tx.receipt_status === "1" ? "success" : "failed",
+        nativeTransfers,
+        tokenTransfers,
+      };
     });
   }
 

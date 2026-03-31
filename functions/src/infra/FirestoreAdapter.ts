@@ -96,30 +96,45 @@ export class FirestoreAdapter {
   }
 
   // Canonical Transaction Caching
+  async saveRawTransaction(chain: string, txHash: string, source: string, rawData: any): Promise<void> {
+    const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
+    await this.db.collection("raw_transactions").doc(docId).set({
+      chain: chain.toLowerCase(),
+      txHash: txHash.toLowerCase(),
+      source,
+      rawData,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async getRawTransaction(chain: string, txHash: string): Promise<any | undefined> {
+    const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
+    const doc = await this.db.collection("raw_transactions").doc(docId).get();
+    return doc.exists ? doc.data() : undefined;
+  }
+
   async saveCanonicalTransaction(chain: string, txHash: string, payload: any, addressesInvolved: string[]): Promise<void> {
     const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
-    await this.db.collection('canonical_transactions').doc(docId).set({
+    await this.db.collection("canonical_transactions").doc(docId).set({
       chain: chain.toLowerCase(),
       txHash: txHash.toLowerCase(),
       payload: payload,
-      addressesInvolved: addressesInvolved.map(a => a.toLowerCase()),
+      addressesInvolved: addressesInvolved.map((a) => a.toLowerCase()),
       updatedAt: new Date().toISOString(),
     });
   }
 
   async getCanonicalTransaction(chain: string, txHash: string): Promise<any | undefined> {
     const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
-    const doc = await this.db.collection('canonical_transactions').doc(docId).get();
-    // return doc.exists ? doc.data()?.data : undefined;
-    return doc.exists ?
-      {
-        chain: doc.data()?.chain,
-        txHash: doc.data()?.txHash,
-        payload: doc.data()?.payload,
-        addressInvolved: doc.data()?.addressInvolved,
-        updatedAt: doc.data()?.updatedAt,
-      }
-      :
-      {}
+    const doc = await this.db.collection("canonical_transactions").doc(docId).get();
+    if (!doc.exists) return undefined;
+
+    return {
+      chain: doc.data()?.chain,
+      txHash: doc.data()?.txHash,
+      payload: doc.data()?.payload,
+      addressesInvolved: doc.data()?.addressesInvolved,
+      updatedAt: doc.data()?.updatedAt,
+    };
   }
 }

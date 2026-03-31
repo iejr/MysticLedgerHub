@@ -17,27 +17,47 @@ export const InternalTransactionSchema = z.object({
 
 export type InternalTransaction = z.infer<typeof InternalTransactionSchema>;
 
+export const NativeTransferSchema = z.object({
+  from: z.string(),
+  to: z.string().nullable(),
+  value: z.string(),
+  valueFormatted: z.string(),
+  usdValue: z.number().optional(),
+});
+
+export type NativeTransfer = z.infer<typeof NativeTransferSchema>;
+
+export const TokenTransferSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  value: z.string(),
+  valueFormatted: z.string(),
+  tokenSymbol: z.string(),
+  tokenAddress: z.string(),
+  tokenDecimals: z.number(),
+  usdValue: z.number().optional(),
+});
+
+export type TokenTransfer = z.infer<typeof TokenTransferSchema>;
+
+export const RawTransactionSchema = z.object({
+  txHash: z.string(),
+  chain: z.string(),
+  source: z.string(), // e.g., "alchemy_trace_transaction"
+  rawData: z.any(),
+});
+
+export type RawTransaction = z.infer<typeof RawTransactionSchema>;
+
 export const UnifiedTransactionSchema = z.object({
   txHash: z.string(),
   blockNumber: z.number(),
-  blockTime: z.string(), // ISO 8601 (Renamed from timestamp)
+  blockTime: z.string(),
   chain: z.string(),
-  from: z.string(),
-  to: z.string().nullable(),
-  value: z.string(), // Raw value in wei
-  valueFormatted: z.string(), // Formatted value
-  tokenSymbol: z.string().optional(),
-  tokenAddress: z.string().optional(),
-  tokenDecimals: z.number().optional(),
-  gasPrice: z.string().optional(),
-  gasUsed: z.string().optional(),
-  status: z.enum(['success', 'failed', 'pending', 'other']),
-  type: z.enum(['regular', 'erc20', 'nft', 'other']),
-  method: z.string().optional(),
-  internalTransactions: z.array(InternalTransactionSchema).optional(),
-  usdPrice: z.number().optional(),
-  usdValue: z.number().optional(),
-  rawData: z.any().optional(),
+  status: z.enum(["success", "failed", "pending", "other"]),
+  nativeTransfers: z.array(NativeTransferSchema),
+  tokenTransfers: z.array(TokenTransferSchema),
+  usdPrice: z.number().optional(), // Price of native asset at blockTime
 });
 
 export type UnifiedTransaction = z.infer<typeof UnifiedTransactionSchema>;
