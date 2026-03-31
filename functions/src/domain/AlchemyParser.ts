@@ -5,6 +5,7 @@ export class AlchemyParser implements TransactionParser {
   parse(rawData: any, walletAddress: string): UnifiedTransaction[] {
     const transfers = rawData as any[];
     return transfers.map((tx) => {
+      const type = this.mapCategoryToType(tx.category);
       return {
         txHash: tx.hash,
         blockNumber: parseInt(tx.blockNum, 16),
@@ -18,7 +19,7 @@ export class AlchemyParser implements TransactionParser {
         tokenAddress: tx.rawContract?.address,
         tokenDecimals: tx.rawContract?.decimal ? parseInt(tx.rawContract.decimal, 16) : undefined,
         status: 'success', // Alchemy asset transfers usually only include successful ones
-        type: this.mapCategoryToType(tx.category),
+        type,
         rawData: tx,
       };
     });

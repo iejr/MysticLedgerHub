@@ -114,6 +114,10 @@ export class TransactionFetcherService {
   }
 
   async fetchMultiWalletTransactions(options: FetchOptions): Promise<UnifiedTransaction[]> {
+    return this.fetchMultiWalletTransactionsTrace(options);
+  }
+
+  async fetchMultiWalletTransactionsDebug(options: FetchOptions): Promise<UnifiedTransaction[]> {
     const wallets = options.wallets || (options.walletAddress ? [{ address: options.walletAddress, label: 'Default' }] : []);
     const chains = options.chains || (options.chain ? [options.chain] : []);
 
@@ -122,7 +126,7 @@ export class TransactionFetcherService {
     }
     const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
 
-    logger.info(`Starting fetchMultiWalletTransactions for ${wallets.length} wallets and ${chains.length} chains`, {
+    logger.info(`Starting fetchMultiWalletTransactionsDetail for ${wallets.length} wallets and ${chains.length} chains`, {
       chains,
       wallets: wallets.map(w => w.address),
       options
@@ -153,6 +157,48 @@ export class TransactionFetcherService {
     // Flatten results and filter by relevant wallets
     txHashMap.forEach((txs) => {
       // Remove rawData from the final response to save some workload
+      const { rawData, ...refinedTxs } = txs;
+      allResults.push(refinedTxs);
+    });
+
+    return allResults;
+  }
+
+  async fetchMultiWalletTransactionsTrace(options: FetchOptions): Promise<UnifiedTransaction[]> {
+    const wallets = options.wallets || (options.walletAddress ? [{ address: options.walletAddress, label: 'Default' }] : []);
+    const chains = options.chains || (options.chain ? [options.chain] : []);
+
+    if (wallets.length === 0 || chains.length === 0) {
+      throw new Error('No wallets or chains specified');
+    }
+    const walletSet = new Set(wallets.map((w) => w.address.toLowerCase()));
+
+    logger.info(`Starting fetchMultiWalletTransactionsTrace for ${wallets.length} wallets and ${chains.length} chains`, {
+      chains,
+      wallets: wallets.map(w => w.address),
+      options
+    });
+
+    let allResults: UnifiedTransaction[] = [];
+    const txHashMap = new Map<string, UnifiedTransaction>(); // chain_txHash -> UnifiedTransaction
+
+    for (const chain of chains) {
+      logger.info(`Processing chain (Fast): ${chain}`);
+      this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+
+      // 1. Resolve block range
+      const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
+
+      // 2. Discover transaction hashes (external + erc20)
+      const discoveredTxHashes = await this.discoverAssetTransfers(chain, wallets, hexFromBlock, hexToBlock, txHashMap, options);
+      logger.info(`Discovered ${discoveredTxHashes.size} unique hashes for ${chain} via Fast discovery`);
+
+      // 3. Fetch detailed traces and enrich (merges with asset transfers already in txHashMap)
+      await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
+    }
+
+    // Flatten results
+    txHashMap.forEach((txs) => {
       const { rawData, ...refinedTxs } = txs;
       allResults.push(refinedTxs);
     });
@@ -209,34 +255,55 @@ export class TransactionFetcherService {
       }
     }
 
-    //Naforuke debug
-    console.log(discoveredTxHashes);
-
     return discoveredTxHashes;
   }
 
   private async discoverERC20Transfers(
-    chain: string, 
-    wallets: { address: string }[], 
-    hexFromBlock: string, 
-    hexToBlock: string, 
+    chain: string,
+    wallets: { address: string }[],
+    hexFromBlock: string,
+    hexToBlock: string,
     txHashMap: Map<string, UnifiedTransaction>,
     options: FetchOptions
-  ): Promise<void> {
-    logger.info(`Discovering ERC20 transfers for ${chain}...`);
+  ): Promise<Set<string>> {
+    return this.discoverAssetTransfers(chain, wallets, hexFromBlock, hexToBlock, txHashMap, options, ["erc20"]);
+  }
+
+  private async discoverAssetTransfers(
+    chain: string,
+    wallets: { address: string }[],
+    hexFromBlock: string,
+    hexToBlock: string,
+    txHashMap: Map<string, UnifiedTransaction>,
+    options: FetchOptions,
+    categories: string[] = ["external", "erc20"]
+  ): Promise<Set<string>> {
+    logger.info(`Discovering asset transfers (${categories.join(",")}) for ${chain}...`);
+    const discoveredHashes = new Set<string>();
+
     const allowedTokens = this.configService ? this.configService.getTokensForChain(chain) : [];
-    const allowedTokenAddresses = new Set(allowedTokens.map(t => {
-      const addr = t.chains[chain.toLowerCase()]?.address;
-      return addr ? addr.toLowerCase() : '';
-    }).filter(a => a !== ''));
+    const allowedTokenAddresses = new Set(
+      allowedTokens
+        .map((t) => {
+          const addr = t.chains[chain.toLowerCase()]?.address;
+          return addr ? addr.toLowerCase() : "";
+        })
+        .filter((a) => a !== "")
+    );
+
+    // Resolve native symbol for the chain
+    let nativeSymbol = "ETH";
+    if (this.configService) {
+      const meta = this.configService.getChainMetadata(chain);
+      if (meta) nativeSymbol = meta.nativeSymbol;
+    }
 
     for (const wallet of wallets) {
-      // Both fromAddress and toAddress to cover all related ERC20 transactions
       const fromParams = {
         fromBlock: hexFromBlock,
         toBlock: hexToBlock,
         fromAddress: wallet.address.toLowerCase(),
-        category: ['erc20'],
+        category: categories,
         withMetadata: true,
       };
 
@@ -244,7 +311,7 @@ export class TransactionFetcherService {
         fromBlock: hexFromBlock,
         toBlock: hexToBlock,
         toAddress: wallet.address.toLowerCase(),
-        category: ['erc20'],
+        category: categories,
         withMetadata: true,
       };
 
@@ -253,29 +320,37 @@ export class TransactionFetcherService {
         for await (const transfers of iterator) {
           const parsedTransfers = this.alchemyParser.parse(transfers, wallet.address);
           for (const tx of parsedTransfers) {
-            if (tx.tokenAddress && allowedTokenAddresses.has(tx.tokenAddress.toLowerCase())) {
-              tx.chain = chain;
-              const symbol = tx.tokenSymbol || 'ETH';
-
-              await this.enrichTransactionWithUSD(tx, symbol);
-
-              if (options.useCache !== false) {
-                const involvedAddresses = this.extractAddressfromTransaction(tx);
-                await this.firestoreAdapter.saveCanonicalTransaction(chain, tx.txHash, tx, Array.from(involvedAddresses));
+            // Spam filtering for ERC20
+            if (tx.type === "erc20") {
+              if (!tx.tokenAddress || !allowedTokenAddresses.has(tx.tokenAddress.toLowerCase())) {
+                continue;
               }
-              txHashMap.set(`${chain}_${tx.txHash}`, tx);
-              logger.info(`Discovered and enriched ERC20 transfer: ${tx.txHash} (${tx.tokenSymbol})`);
             }
+
+            discoveredHashes.add(tx.txHash);
+            tx.chain = chain;
+
+            // If we already have this tx in hash map (e.g. from previous from/to params in this loop), skip enrichment but keep the hash
+            if (txHashMap.has(`${chain}_${tx.txHash}`)) continue;
+
+            const symbol = tx.type === "erc20" ? tx.tokenSymbol || nativeSymbol : nativeSymbol;
+            await this.enrichTransactionWithUSD(tx, symbol);
+
+            // We store the asset transfer summary in the hash map.
+            // It will be replaced/merged if a full trace is fetched later.
+            txHashMap.set(`${chain}_${tx.txHash}`, tx);
+            logger.info(`Discovered and enriched ${tx.type} transfer: ${tx.txHash} (${symbol})`);
           }
         }
       }
     }
+    return discoveredHashes;
   }
 
   private async fetchAndEnrichTraceTransactions(
-    chain: string, 
-    discoveredTxHashes: Set<string>, 
-    walletSet: Set<string>, 
+    chain: string,
+    discoveredTxHashes: Set<string>,
+    walletSet: Set<string>,
     txHashMap: Map<string, UnifiedTransaction>,
     options: FetchOptions
   ): Promise<void> {
@@ -285,6 +360,19 @@ export class TransactionFetcherService {
       if (options.useCache !== false) {
         const cachedTransactionsObj = await this.firestoreAdapter.getCanonicalTransaction(chain, hash);
         if (cachedTransactionsObj && this.filterTransactionByAddress(cachedTransactionsObj.payload, walletSet)) {
+          // If we already have asset transfer summary, we merge it with the cached trace (trace takes precedence for core fields)
+          const existingSummary = txHashMap.get(`${chain}_${hash}`);
+          if (existingSummary && existingSummary.type === "erc20") {
+            // Keep the token information from the asset transfer summary if the trace is 'regular'
+            // and the summary is 'erc20' (since traces don't easily give token info for events)
+            const traceTx = cachedTransactionsObj.payload;
+            if (traceTx.type === "regular") {
+              traceTx.tokenSymbol = existingSummary.tokenSymbol;
+              traceTx.tokenAddress = existingSummary.tokenAddress;
+              traceTx.tokenDecimals = existingSummary.tokenDecimals;
+              traceTx.type = "erc20";
+            }
+          }
           txHashMap.set(`${chain}_${hash}`, cachedTransactionsObj.payload);
           continue;
         }
@@ -295,7 +383,7 @@ export class TransactionFetcherService {
     if (txHashesToFetch.length > 0) {
       logger.info(`Fetching ${txHashesToFetch.length} trace_transaction results for ${chain}...`);
       const batchRequests = txHashesToFetch.map((hash) => ({
-        method: 'trace_transaction',
+        method: "trace_transaction",
         params: [hash],
       }));
 
@@ -309,6 +397,17 @@ export class TransactionFetcherService {
           const traces = res.result;
           const parsedTransaction = this.alchemyParser.parseTrace(traces, chain);
           if (!parsedTransaction) continue;
+
+          // Merge with existing asset transfer summary if present
+          const existingSummary = txHashMap.get(`${chain}_${txHash}`);
+          if (existingSummary && existingSummary.type === "erc20") {
+            parsedTransaction.tokenSymbol = existingSummary.tokenSymbol;
+            parsedTransaction.tokenAddress = existingSummary.tokenAddress;
+            parsedTransaction.tokenDecimals = existingSummary.tokenDecimals;
+            parsedTransaction.type = "erc20";
+            // Also inherit USD price and value if already enriched
+            if (existingSummary.usdPrice) parsedTransaction.usdPrice = existingSummary.usdPrice;
+          }
 
           // Resolve blockTime and enrichment
           await this.enrichTraceTransaction(chain, txHash, parsedTransaction);
