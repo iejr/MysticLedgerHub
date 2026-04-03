@@ -7,8 +7,8 @@ export interface TokenMetadata {
   name: string;
   symbol: string;
   decimals: number;
-  type: 'native' | 'erc20';
-  chains: Record<string, { address?: string }>;
+  type: "native" | "erc20";
+  chains: Record<string, { address?: string; decimals?: number }>;
 }
 
 export interface ChainConfig {

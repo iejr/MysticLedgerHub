@@ -72,4 +72,26 @@ export class BlockService {
     await this.firestoreAdapter.saveBlockMapping(chain, targetTs, high);
     return high;
   }
+
+  async getBlockTime(chain: string, blockNumber: number): Promise<string> {
+    // 1. Check Cache
+    const cachedTs = await this.firestoreAdapter.getTimestampByBlockNumber(chain, blockNumber);
+    if (cachedTs) {
+      return new Date(cachedTs * 1000).toISOString();
+    }
+
+    // 2. Fetch from Provider
+    this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+    const block = await this.alchemyAdapter.getBlock(`0x${blockNumber.toString(16)}`);
+    if (!block || !block.timestamp) {
+      throw new Error(`Failed to fetch block ${blockNumber} for chain ${chain}`);
+    }
+
+    const ts = parseInt(block.timestamp, 16);
+    
+    // 3. Save to Cache (both ways if possible, but at least block -> ts)
+    await this.firestoreAdapter.saveBlockMapping(chain, ts, blockNumber);
+
+    return new Date(ts * 1000).toISOString();
+  }
 }

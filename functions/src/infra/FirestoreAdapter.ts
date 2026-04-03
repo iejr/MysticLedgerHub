@@ -1,5 +1,5 @@
 import { Firestore, DocumentData } from '@google-cloud/firestore';
-import { UnifiedBalance } from '../domain/types.js';
+import { UnifiedBalance, UnifiedTransaction } from '../domain/types.js';
 
 export class FirestoreAdapter {
   private db: Firestore;
@@ -48,10 +48,18 @@ export class FirestoreAdapter {
 
   // Block Mapping Caching
   async saveBlockMapping(chain: string, timestamp: number, blockNumber: number): Promise<void> {
-    // Round timestamp to nearest 10 mins or something if we want broader reuse, 
-    // but for monthly reports, exact match or close match is better.
-    const docId = `${chain.toLowerCase()}_ts_${timestamp}`;
-    await this.db.collection('block_mappings').doc(docId).set({
+    // 1. Save timestamp -> blockNumber mapping
+    const tsDocId = `${chain.toLowerCase()}_ts_${timestamp}`;
+    await this.db.collection('block_mappings').doc(tsDocId).set({
+      chain: chain.toLowerCase(),
+      timestamp,
+      blockNumber,
+      updatedAt: new Date(),
+    });
+
+    // 2. Save blockNumber -> timestamp mapping
+    const blockDocId = `${chain.toLowerCase()}_num_${blockNumber}`;
+    await this.db.collection('block_number_mappings').doc(blockDocId).set({
       chain: chain.toLowerCase(),
       timestamp,
       blockNumber,
@@ -60,11 +68,15 @@ export class FirestoreAdapter {
   }
 
   async getBlockMapping(chain: string, timestamp: number): Promise<number | undefined> {
-    // For simplicity, look for exact match. 
-    // In future, could look for range +/- averageBlockTime
     const docId = `${chain.toLowerCase()}_ts_${timestamp}`;
     const doc = await this.db.collection('block_mappings').doc(docId).get();
     return doc.data()?.blockNumber;
+  }
+
+  async getTimestampByBlockNumber(chain: string, blockNumber: number): Promise<number | undefined> {
+    const docId = `${chain.toLowerCase()}_num_${blockNumber}`;
+    const doc = await this.db.collection('block_number_mappings').doc(docId).get();
+    return doc.data()?.timestamp;
   }
 
   // Balance Caching
@@ -136,5 +148,21 @@ export class FirestoreAdapter {
       addressesInvolved: doc.data()?.addressesInvolved,
       updatedAt: doc.data()?.updatedAt,
     };
+  }
+
+  async saveDiscoveredTokenTransfers(chain: string, txHash: string, transfers: UnifiedTransaction['tokenTransfers']): Promise<void> {
+    const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
+    await this.db.collection("discovered_token_transfers").doc(docId).set({
+      chain: chain.toLowerCase(),
+      txHash: txHash.toLowerCase(),
+      transfers,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async getDiscoveredTokenTransfers(chain: string, txHash: string): Promise<UnifiedTransaction['tokenTransfers'] | undefined> {
+    const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
+    const doc = await this.db.collection("discovered_token_transfers").doc(docId).get();
+    return doc.exists ? (doc.data()?.transfers as UnifiedTransaction['tokenTransfers']) : undefined;
   }
 }

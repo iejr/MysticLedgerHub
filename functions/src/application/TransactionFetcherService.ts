@@ -4,6 +4,7 @@ import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
 import { logger } from 'firebase-functions';
 import { MoralisParser } from '../domain/MoralisParser.js';
 import { AlchemyParser } from '../domain/AlchemyParser.js';
+import { formatUnits } from "ethers";
 import {
   UnifiedTransaction,
   NativeTransfer,
@@ -116,6 +117,8 @@ export class TransactionFetcherService {
     return involvedAddresses;
   }
 
+  filterTransactionByCallType(transaction: UnifiedTransaction): void {}
+
   async fetchMultiWalletTransactions(options: FetchOptions): Promise<UnifiedTransaction[]> {
     return this.fetchMultiWalletTransactionsFast(options);
   }
@@ -152,13 +155,14 @@ export class TransactionFetcherService {
       const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
       logger.info(`Resolved block range for ${chain}: ${hexFromBlock} to ${hexToBlock}`);
 
-      const discoveredTxHashes = await this.discoverTraceHashes(discoveryAddresses, hexFromBlock, hexToBlock);
-      logger.info(`Discovered ${discoveredTxHashes.size} unique trace hashes for ${chain}`);
+      const discoveredTraceHashes = await this.discoverTraceHashes(discoveryAddresses, hexFromBlock, hexToBlock);
+      logger.info(`Discovered ${discoveredTraceHashes.size} unique trace hashes for ${chain}`);
 
-      await this.discoverERC20Transfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, txHashMap, options);
-      logger.info(`Completed ERC20 discovery for ${chain}. Current total txs: ${txHashMap.size}`);
+      const discoveredERC20Hashes = await this.discoverERC20Transfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, options);
+      logger.info(`Completed ERC20 discovery for ${chain}. Discovered ${discoveredERC20Hashes.size} hashes.`);
 
-      await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
+      const allDiscoveredHashes = new Set([...discoveredTraceHashes, ...discoveredERC20Hashes]);
+      await this.fetchAndEnrichTraceTransactions(chain, allDiscoveredHashes, walletSet, txHashMap, options);
     }
 
     txHashMap.forEach((txs) => {
@@ -199,7 +203,7 @@ export class TransactionFetcherService {
 
       const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
 
-      const discoveredTxHashes = await this.discoverAssetTransfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, txHashMap, options);
+      const discoveredTxHashes = await this.discoverAssetTransfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, options);
       logger.info(`Discovered ${discoveredTxHashes.size} unique hashes for ${chain} via Fast discovery`);
 
       await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
@@ -269,10 +273,9 @@ export class TransactionFetcherService {
     wallets: { address: string }[],
     hexFromBlock: string,
     hexToBlock: string,
-    txHashMap: Map<string, UnifiedTransaction>,
     options: FetchOptions
   ): Promise<Set<string>> {
-    return this.discoverAssetTransfers(chain, wallets, hexFromBlock, hexToBlock, txHashMap, options, ["erc20"]);
+    return this.discoverAssetTransfers(chain, wallets, hexFromBlock, hexToBlock, options, ["erc20"]);
   }
 
   private async discoverAssetTransfers(
@@ -280,7 +283,6 @@ export class TransactionFetcherService {
     wallets: { address: string }[],
     hexFromBlock: string,
     hexToBlock: string,
-    txHashMap: Map<string, UnifiedTransaction>,
     options: FetchOptions,
     categories: string[] = ["external", "erc20"]
   ): Promise<Set<string>> {
@@ -317,23 +319,33 @@ export class TransactionFetcherService {
       for (const params of [fromParams, toParams]) {
         const iterator = this.alchemyAdapter.getTransactionsIterator(params as any);
         for await (const transfers of iterator) {
-          const parsedTransfers = this.alchemyParser.parse(transfers, wallet.address);
-          for (const tx of parsedTransfers) {
+          const transfersByHash: Record<string, any[]> = {};
+
+          for (const t of transfers) {
             // Spam filtering for ERC20
-            const isSpam = tx.tokenTransfers.some((tt) => !allowedTokenAddresses.has(tt.tokenAddress.toLowerCase()));
-            if (tx.tokenTransfers.length > 0 && isSpam) {
-              continue;
+            if (t.category === 'erc20') {
+              const tokenAddr = t.rawContract?.address?.toLowerCase() || '';
+              if (!allowedTokenAddresses.has(tokenAddr)) continue;
             }
 
-            discoveredHashes.add(tx.txHash);
-            tx.chain = chain;
+            discoveredHashes.add(t.hash);
+            if (!transfersByHash[t.hash]) transfersByHash[t.hash] = [];
+            transfersByHash[t.hash].push(t);
 
-            if (txHashMap.has(`${chain}_${tx.txHash}`)) continue;
+            // Cache block metadata if present
+            if (t.metadata?.blockTimestamp) {
+              const ts = Math.floor(new Date(t.metadata.blockTimestamp).getTime() / 1000);
+              const blockNum = parseInt(t.blockNum, 16);
+              await this.firestoreAdapter.saveBlockMapping(chain, ts, blockNum);
+            }
+          }
 
-            await this.enrichTransactionWithUSD(tx);
-
-            txHashMap.set(`${chain}_${tx.txHash}`, tx);
-            logger.info(`Discovered and enriched asset transfers for: ${tx.txHash}`);
+          // Cache token transfers for each hash
+          for (const [txHash, txTransfers] of Object.entries(transfersByHash)) {
+            const parsed = this.alchemyParser.parse(txTransfers, wallet.address);
+            if (parsed.length > 0 && parsed[0].tokenTransfers.length > 0) {
+              await this.firestoreAdapter.saveDiscoveredTokenTransfers(chain, txHash, parsed[0].tokenTransfers);
+            }
           }
         }
       }
@@ -381,14 +393,44 @@ export class TransactionFetcherService {
 
           const { unified: parsedTransaction, raw } = distillationResult;
 
-          // Merge with existing asset transfer summary if present (especially to get token metadata)
-          const existingSummary = txHashMap.get(`${chain}_${txHash}`);
-          if (existingSummary) {
-            for (const st of existingSummary.tokenTransfers) {
-              if (!parsedTransaction.tokenTransfers.some((tt) => tt.tokenAddress === st.tokenAddress && tt.value === st.value)) {
-                parsedTransaction.tokenTransfers.push(st);
+          // Resolve symbols/decimals for decoded transfers that are still "UNKNOWN"
+          if (this.configService) {
+            const chainTokens = this.configService.getTokensForChain(chain);
+            for (const tt of parsedTransaction.tokenTransfers) {
+              if (tt.tokenSymbol === "UNKNOWN" || !tt.tokenSymbol) {
+                const tokenConfig = chainTokens.find(
+                  (t) => t.chains[chain.toLowerCase()]?.address?.toLowerCase() === tt.tokenAddress.toLowerCase()
+                );
+                const chainData = tokenConfig?.chains[chain.toLowerCase()];
+                if (tokenConfig && chainData) {
+                  const finalDecimals = chainData.decimals !== undefined ? chainData.decimals : tokenConfig.decimals;
+                  tt.tokenSymbol = tokenConfig.symbol;
+                  tt.tokenDecimals = finalDecimals;
+                  tt.valueFormatted = formatUnits(BigInt(tt.value), tt.tokenDecimals);
+                }
               }
             }
+          }
+
+          // Merge with cached token transfers from discovery
+          const cachedTokenTransfers = await this.firestoreAdapter.getDiscoveredTokenTransfers(chain, txHash);
+          if (cachedTokenTransfers) {
+            for (const ct of cachedTokenTransfers) {
+              const isDuplicate = parsedTransaction.tokenTransfers.some(
+                (tt) =>
+                  tt.tokenAddress.toLowerCase() === ct.tokenAddress.toLowerCase() &&
+                  tt.value === ct.value &&
+                  tt.to.toLowerCase() === ct.to.toLowerCase()
+              );
+              if (!isDuplicate) {
+                parsedTransaction.tokenTransfers.push(ct);
+              }
+            }
+          }
+
+          if (!this.filterTransactionByAddress(parsedTransaction, walletSet)) {
+            // To filter out the transactions that only assist addresses are involved
+            continue;
           }
 
           // Resolve blockTime and enrichment
@@ -411,10 +453,7 @@ export class TransactionFetcherService {
     // Resolve blockTime if needed
     if (this.blockService) {
       try {
-        const block = await this.alchemyAdapter.getBlock(`0x${parsedTransaction.blockNumber.toString(16)}`);
-        if (block && block.timestamp) {
-          parsedTransaction.blockTime = new Date(parseInt(block.timestamp, 16) * 1000).toISOString();
-        }
+        parsedTransaction.blockTime = await this.blockService.getBlockTime(chain, parsedTransaction.blockNumber);
       } catch (e) {
         console.warn(`Failed to fetch block timestamp for hash ${txHash}`, e);
       }
@@ -445,6 +484,11 @@ export class TransactionFetcherService {
     }
 
     for (const tt of tx.tokenTransfers) {
+      if (tt.tokenSymbol === 'UNKNOWN') {
+        tt.usdValue = 0;
+        continue;
+      }
+
       try {
         const tokenUsdPrice = await this.priceService.getPriceAtTime(tt.tokenSymbol, new Date(tx.blockTime));
         if (tokenUsdPrice !== undefined) {

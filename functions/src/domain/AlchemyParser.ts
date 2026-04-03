@@ -1,4 +1,4 @@
-import { formatUnits } from "ethers";
+import { formatUnits, Interface } from "ethers";
 import {
   UnifiedTransaction,
   TransactionParser,
@@ -7,6 +7,11 @@ import {
   TokenTransfer,
   RawTransaction,
 } from "./types.js";
+
+const ERC20_INTERFACE = new Interface([
+  "function transfer(address to, uint256 value)",
+  "function transferFrom(address from, address to, uint256 value)"
+]);
 
 export class AlchemyParser implements TransactionParser {
   parse(rawData: any, walletAddress: string): UnifiedTransaction[] {
@@ -20,14 +25,14 @@ export class AlchemyParser implements TransactionParser {
         nativeTransfers.push({
           from: tx.from,
           to: tx.to || null,
-          value: tx.rawContract?.value || "0",
+          value: BigInt(tx.rawContract?.value).toString(10) || "0",
           valueFormatted: tx.value?.toString() || "0",
         });
       } else if (category === "erc20") {
         tokenTransfers.push({
           from: tx.from,
           to: tx.to,
-          value: tx.rawContract?.value || "0",
+          value: BigInt(tx.rawContract?.value).toString(10) || "0",
           valueFormatted: tx.value?.toString() || "0",
           tokenSymbol: tx.asset,
           tokenAddress: tx.rawContract?.address,
@@ -62,9 +67,14 @@ export class AlchemyParser implements TransactionParser {
     const nativeTransfers: NativeTransfer[] = [];
     const tokenTransfers: TokenTransfer[] = [];
 
-    // 1. Extract Native Transfers from traces
-    // We include the main action and any internal 'call' that has a non-zero value
+    // 1. Extract Native Transfers and Token Transfers from traces
     for (const t of traces) {
+      // Filter out delegate call
+      if (t.action?.callType === 'delegatecall') {
+        continue;
+      }
+
+      // Native Transfers
       if (t.action?.value && BigInt(t.action.value) > 0n) {
         nativeTransfers.push({
           from: t.action.from,
@@ -72,6 +82,39 @@ export class AlchemyParser implements TransactionParser {
           value: BigInt(t.action.value).toString(10),
           valueFormatted: formatUnits(BigInt(t.action.value), 18),
         });
+      }
+
+      // Token Transfers (decoding input data)
+      if (t.action?.input && t.action.input.startsWith("0xa9059cbb")) {
+        try {
+          const decoded = ERC20_INTERFACE.decodeFunctionData("transfer", t.action.input);
+          tokenTransfers.push({
+            from: t.action.from,
+            to: decoded[0],
+            value: decoded[1].toString(),
+            valueFormatted: decoded[1].toString(), // Will be formatted later when decimals are known
+            tokenSymbol: "UNKNOWN",
+            tokenAddress: t.action.to,
+            tokenDecimals: 18, // Default, will be resolved later
+          });
+        } catch (e) {
+          // Ignore decoding errors
+        }
+      } else if (t.action?.input && t.action.input.startsWith("0x23b872dd")) {
+        try {
+          const decoded = ERC20_INTERFACE.decodeFunctionData("transferFrom", t.action.input);
+          tokenTransfers.push({
+            from: decoded[0],
+            to: decoded[1],
+            value: decoded[2].toString(),
+            valueFormatted: decoded[2].toString(),
+            tokenSymbol: "UNKNOWN",
+            tokenAddress: t.action.to,
+            tokenDecimals: 18,
+          });
+        } catch (e) {
+          // Ignore decoding errors
+        }
       }
     }
 
