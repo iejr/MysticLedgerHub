@@ -1,6 +1,9 @@
 tokens:
-  - id: ethereum-native
-    name: Ethereum
+  # System token IDs use kebab-case and are stable internal identifiers.
+  # symbol is the public ticker shown to users.
+
+  - id: native-eth
+    name: Ether
     symbol: ETH
     decimals: 18
     type: native
@@ -30,20 +33,29 @@ tokens:
       optimism:
         address: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
 
+  - id: angland-fish
+    name: Angland FISH
+    symbol: FISH
+    decimals: 0
+    type: erc20
+    chains:
+      base:
+        address: "0xaB646Ee997975B97851A923e4E8DaF4EA36D1e9b"
+
 chains:
   ethereum:
-    allowlist: [ethereum-native, usdc]
+    allowlist: [native-eth, usdc]
   arbitrum:
-    allowlist: [ethereum-native, usdc]
+    allowlist: [native-eth, usdc]
   base:
-    allowlist: [ethereum-native, usdc]
+    allowlist: [native-eth, usdc, angland-fish]
   optimism:
-    allowlist: [ethereum-native, usdc]
+    allowlist: [native-eth, usdc]
   linea:
-    allowlist: [ethereum-native]
+    allowlist: [native-eth]
   polygon:
     allowlist: [usdc]
   ink:
-    allowlist: [ethereum-native]
+    allowlist: [native-eth]
   scroll:
-    allowlist: [ethereum-native]
+    allowlist: [native-eth]

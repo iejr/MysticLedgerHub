@@ -1,110 +1,113 @@
+# System chain IDs are the YAML map keys (e.g. "ethereum", "base").
+# evmChainId is the public EVM/network chain ID — optional, for reference only.
+
 ethereum:
-  chainId: 1
-  nativeSymbol: ETH
+  evmChainId: 1
   name: Ethereum Mainnet
+  nativeSymbol: ETH
   averageBlockTime: 12.1
   startBlock: 20000000
   explorerUrl: https://etherscan.io/
 
 abstract:
-  chainId: 2741
-  nativeSymbol: ETH
+  evmChainId: 2741
   name: Abstract
+  nativeSymbol: ETH
   averageBlockTime: 0.5
   startBlock: 0
   explorerUrl: https://abscan.org/blocks
 
 arbitrum:
-  chainId: 42161
-  nativeSymbol: ETH
+  evmChainId: 42161
   name: Arbitrum One
+  nativeSymbol: ETH
   averageBlockTime: 0.25
   startBlock: 0
   explorerUrl: https://arbiscan.io
 
 avax:
-  chainId: 43114
+  evmChainId: 43114
+  name: Avalanche C-Chain
   nativeSymbol: AVAX
-  name: Avalanche
   averageBlockTime: 1.0
   startBlock: 0
   explorerUrl: https://avascan.info/
 
 base:
-  chainId: 8453
-  nativeSymbol: ETH
+  evmChainId: 8453
   name: Base
+  nativeSymbol: ETH
   averageBlockTime: 2.0
   startBlock: 0
   explorerUrl: https://basescan.org/
 
 bnb:
-  chainId: 56
-  nativeSymbol: BNB
+  evmChainId: 56
   name: BNB Chain
+  nativeSymbol: BNB
   averageBlockTime: 0.45
   startBlock: 0
   explorerUrl: https://bscscan.com/
 
 optimism:
-  chainId: 10
-  nativeSymbol: ETH
+  evmChainId: 10
   name: Optimism
+  nativeSymbol: ETH
   averageBlockTime: 2.0
   startBlock: 0
   explorerUrl: https://optimistic.etherscan.io/
 
 polygon:
-  chainId: 137
-  nativeSymbol: MATIC
+  evmChainId: 137
   name: Polygon
+  nativeSymbol: MATIC
   averageBlockTime: 2.1
   startBlock: 0
   explorerUrl: https://polygonscan.com/
 
 zkSync:
-  chainId: 130
+  evmChainId: 324
+  name: ZKsync Era
   nativeSymbol: ETH
-  name: ZKsync
   startBlock: 0
   explorerUrl: https://explorer.zksync.io/
 
-zora: 
-  chainId: 7777777
-  nativeSymbol: ETH
+zora:
+  evmChainId: 7777777
   name: Zora
+  nativeSymbol: ETH
   averageBlockTime: 2.0
   startBlock: 0
   explorerUrl: https://explorer.zora.energy/
 
 blast:
-  chainId: 81457
-  nativeSymbol: ETH
+  evmChainId: 81457
   name: Blast
+  nativeSymbol: ETH
   averageBlockTime: 2.0
   startBlock: 0
   explorerUrl: https://blastscan.io/
 
 scroll:
-  chainId: 534352
-  nativeSymbol: ETH
+  evmChainId: 534352
   name: Scroll
+  nativeSymbol: ETH
   averageBlockTime: 3.0
   startBlock: 0
   explorerUrl: https://scrollscan.com/
 
 linea:
-  chainId: 59144
-  nativeSymbol: ETH
+  evmChainId: 59144
   name: Linea
+  nativeSymbol: ETH
   averageBlockTime: 2.2
   startBlock: 0
   explorerUrl: https://lineascan.build/
 
 ink:
-  chainId: 57073
-  nativeSymbol: ETH
+  evmChainId: 57073
   name: Ink
+  nativeSymbol: ETH
   averageBlockTime: 1.0
   startBlock: 0
   explorerUrl: https://explorer.inkonchain.com/

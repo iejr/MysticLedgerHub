@@ -38,11 +38,16 @@ export interface WalletConfig {
 }
 
 export interface ChainMetadata {
+  /** Internal system ID — matches the YAML map key (e.g. "ethereum", "base") */
+  id: string;
+  /** Human-readable display name (e.g. "Ethereum Mainnet") */
   name: string;
   nativeSymbol: string;
   averageBlockTime: number;
   startBlock: number;
   explorerUrl: string;
+  /** EVM network chain ID — optional, for reference/interop only */
+  evmChainId?: number;
 }
 
 export class ConfigService {
@@ -103,6 +108,19 @@ export class ConfigService {
 
   // Chain Methods
   getChainMetadata(chain: string): ChainMetadata | undefined {
-    return this.chainConfig[chain.toLowerCase()];
+    const key = chain.toLowerCase();
+    const meta = this.chainConfig[key];
+    if (!meta) return undefined;
+    // Inject the system id (YAML map key) into the returned object
+    return { ...meta, id: key };
+  }
+
+  getTokenByAddress(chain: string, address: string): TokenMetadata | undefined {
+    const lowerAddr = address.toLowerCase();
+    const lowerChain = chain.toLowerCase();
+    return this.tokenConfig.tokens.find(t => {
+      const chainEntry = t.chains[lowerChain];
+      return chainEntry?.address?.toLowerCase() === lowerAddr;
+    });
   }
 }

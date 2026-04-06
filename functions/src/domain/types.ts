@@ -32,6 +32,9 @@ export const TokenTransferSchema = z.object({
   to: z.string(),
   value: z.string(),
   valueFormatted: z.string(),
+  /** Internal system token ID (e.g. "usdc", "native-eth") — preferred over symbol in code */
+  tokenId: z.string().optional(),
+  /** Public ticker symbol — use for display/export */
   tokenSymbol: z.string(),
   tokenAddress: z.string(),
   tokenDecimals: z.number(),
@@ -53,7 +56,10 @@ export const UnifiedTransactionSchema = z.object({
   txHash: z.string(),
   blockNumber: z.number(),
   blockTime: z.string(),
+  /** Internal system chain ID — matches the YAML map key (e.g. "ethereum", "base") */
   chain: z.string(),
+  /** Human-readable chain name — populated during enrichment for API output */
+  chainName: z.string().optional(),
   status: z.enum(["success", "failed", "pending", "other"]),
   nativeTransfers: z.array(NativeTransferSchema),
   tokenTransfers: z.array(TokenTransferSchema),
@@ -68,7 +74,11 @@ export interface TransactionParser {
 
 export const UnifiedBalanceSchema = z.object({
   walletAddress: z.string(),
+  /** Internal system chain ID */
   chain: z.string(),
+  /** Human-readable chain name — for API output */
+  chainName: z.string().optional(),
+  /** Internal system token ID (e.g. "usdc", "native-eth") */
   tokenId: z.string(),
   tokenSymbol: z.string(),
   tokenName: z.string(),

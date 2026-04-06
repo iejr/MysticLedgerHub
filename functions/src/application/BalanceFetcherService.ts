@@ -113,6 +113,7 @@ export class BalanceFetcherService {
       const balance: UnifiedBalance = {
         walletAddress,
         chain,
+        chainName: this.configService.getChainMetadata(chain)?.name,
         tokenId: token.id,
         tokenSymbol: token.symbol,
         tokenName: token.name,
@@ -216,6 +217,7 @@ export class BalanceFetcherService {
         const balance: UnifiedBalance = {
           walletAddress: req.meta.wallet,
           chain,
+          chainName: this.configService.getChainMetadata(chain)?.name,
           tokenId: token.id,
           tokenSymbol: token.symbol,
           tokenName: token.name,

@@ -404,6 +404,7 @@ export class TransactionFetcherService {
                 const chainData = tokenConfig?.chains[chain.toLowerCase()];
                 if (tokenConfig && chainData) {
                   const finalDecimals = chainData.decimals !== undefined ? chainData.decimals : tokenConfig.decimals;
+                  tt.tokenId = tokenConfig.id;
                   tt.tokenSymbol = tokenConfig.symbol;
                   tt.tokenDecimals = finalDecimals;
                   tt.valueFormatted = formatUnits(BigInt(tt.value), tt.tokenDecimals);
@@ -456,6 +457,19 @@ export class TransactionFetcherService {
         parsedTransaction.blockTime = await this.blockService.getBlockTime(chain, parsedTransaction.blockNumber);
       } catch (e) {
         console.warn(`Failed to fetch block timestamp for hash ${txHash}`, e);
+      }
+    }
+
+    // Set human-readable chain name
+    if (this.configService) {
+      parsedTransaction.chainName = this.configService.getChainMetadata(chain)?.name;
+
+      // Resolve tokenId for all token transfers by matching address against config
+      for (const tt of parsedTransaction.tokenTransfers) {
+        if (!tt.tokenId && tt.tokenAddress) {
+          const tokenConfig = this.configService.getTokenByAddress(chain, tt.tokenAddress);
+          if (tokenConfig) tt.tokenId = tokenConfig.id;
+        }
       }
     }
 
