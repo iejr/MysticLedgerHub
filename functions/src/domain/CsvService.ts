@@ -50,25 +50,26 @@ export class CsvService {
     const rows = balances.map(b => {
       const wallet = this.configService.getWallets().find(w => w.address.toLowerCase() === b.walletAddress.toLowerCase());
       const chainMeta = this.configService.getChainMetadata(b.chain);
+      const chainId = chainMeta?.id || b.chain;
       const tokenMeta = this.configService.getTokenById(b.tokenId);
       
       const tokenAddress = b.tokenId.includes('native') ? '0x0000000000000000000000000000000000000000' : tokenMeta?.chains[b.chain.toLowerCase()]?.address || '';
 
       const row = [
-        b.requestedDate || b.blocktime, // User requested date or fallback to blocktime
-        b.walletAddress,
-        wallet?.label || '',
-        chainMeta?.name || b.chain,
-        tokenAddress,
-        b.tokenSymbol,
-        b.tokenName,
-        b.balanceFormatted,
-        b.usdBalance?.toFixed(2) || '',
-        '', // possible_spam
-        '', // verified_contract
-        '', // security_score
-        b.blocktime, // Actual block timestamp
-        b.blockNumber || ''
+        b.requestedDate || b.blocktime,      // 'date',                       
+        b.walletAddress,                     // 'address',
+        wallet?.label || '',                 // 'label',
+        chainId,                             // 'network',
+        tokenAddress,                        // 'token_address',
+        b.tokenSymbol,                       // 'symbol',
+        b.tokenId,                           // 'name',
+        b.balanceFormatted,                  // 'balance',
+        b.usdBalance?.toFixed(2) || '',      // 'usd_value',
+        '',                                  // 'possible_spam',
+        '',                                  // 'verified_contract',
+        '',                                  // 'security_score',
+        b.blocktime,                         // 'blocktime',
+        b.blockNumber || ''                  // 'blockNumber'        
       ];
       return row.map(v => this.escapeCsvField(String(v))).join(',');
     });

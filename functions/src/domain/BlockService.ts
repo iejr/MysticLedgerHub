@@ -1,27 +1,27 @@
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
-import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
+import { CacheService } from './CacheService.js';
 import { ConfigService } from './ConfigService.js';
 import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 
 export class BlockService {
   private alchemyAdapter: AlchemyAdapter;
-  private firestoreAdapter: FirestoreAdapter;
+  private cacheService: CacheService;
   private configService: ConfigService;
 
-  constructor(alchemyAdapter: AlchemyAdapter, firestoreAdapter: FirestoreAdapter, configService: ConfigService) {
+  constructor(alchemyAdapter: AlchemyAdapter, cacheService: CacheService, configService: ConfigService) {
     this.alchemyAdapter = alchemyAdapter;
-    this.firestoreAdapter = firestoreAdapter;
+    this.cacheService = cacheService;
     this.configService = configService;
   }
 
   async findBlockByTimestamp(chain: string, targetTimestamp: Date): Promise<number> {
     const targetTs = Math.floor(targetTimestamp.getTime() / 1000);
     const chainMeta = this.configService.getChainMetadata(chain);
-    
+
     if (!chainMeta) throw new Error(`Chain metadata not found for ${chain}`);
 
     // 1. Check Cache
-    const cached = await this.firestoreAdapter.getBlockMapping(chain, targetTs);
+    const cached = await this.cacheService.getBlockMapping(chain, targetTs);
     if (cached) return cached;
 
     // 2. Initialize Bounds
@@ -34,7 +34,7 @@ export class BlockService {
 
     let low = chainMeta.startBlock;
     let high = latestNumber;
-    
+
     const lowBlock = await this.alchemyAdapter.getBlock(`0x${low.toString(16)}`);
     let lowTs = parseInt(lowBlock.timestamp, 16);
     let highTs = latestTs;
@@ -43,19 +43,19 @@ export class BlockService {
     let iterations = 0;
     while (low <= high && iterations < 15) {
       iterations++;
-      
+
       // Heuristic mid-point
       let mid = low + Math.floor(((targetTs - lowTs) / (highTs - lowTs)) * (high - low));
-      
+
       // Safety bounds
       mid = Math.max(low, Math.min(high, mid));
-      
+
       const midBlock = await this.alchemyAdapter.getBlock(`0x${mid.toString(16)}`);
       const midTs = parseInt(midBlock.timestamp, 16);
 
       if (Math.abs(midTs - targetTs) < chainMeta.averageBlockTime) {
         // Close enough
-        await this.firestoreAdapter.saveBlockMapping(chain, targetTs, mid);
+        await this.cacheService.saveBlockMapping(chain, targetTs, mid);
         return mid;
       }
 
@@ -69,13 +69,13 @@ export class BlockService {
     }
 
     // Fallback to high if search doesn't perfectly converge
-    await this.firestoreAdapter.saveBlockMapping(chain, targetTs, high);
+    await this.cacheService.saveBlockMapping(chain, targetTs, high);
     return high;
   }
 
   async getBlockTime(chain: string, blockNumber: number): Promise<string> {
     // 1. Check Cache
-    const cachedTs = await this.firestoreAdapter.getTimestampByBlockNumber(chain, blockNumber);
+    const cachedTs = await this.cacheService.getTimestampByBlockNumber(chain, blockNumber);
     if (cachedTs) {
       return new Date(cachedTs * 1000).toISOString();
     }
@@ -88,9 +88,9 @@ export class BlockService {
     }
 
     const ts = parseInt(block.timestamp, 16);
-    
+
     // 3. Save to Cache (both ways if possible, but at least block -> ts)
-    await this.firestoreAdapter.saveBlockMapping(chain, ts, blockNumber);
+    await this.cacheService.saveBlockMapping(chain, ts, blockNumber);
 
     return new Date(ts * 1000).toISOString();
   }

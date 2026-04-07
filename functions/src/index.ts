@@ -4,6 +4,7 @@ import { Throttler } from './infra/Throttler.js';
 import { MoralisAdapter } from './infra/MoralisAdapter.js';
 import { AlchemyAdapter } from './infra/AlchemyAdapter.js';
 import { FirestoreAdapter } from './infra/FirestoreAdapter.js';
+import { CacheService } from './domain/CacheService.js';
 import { TransactionFetcherService } from './application/TransactionFetcherService.js';
 import { BalanceFetcherService } from './application/BalanceFetcherService.js';
 import { ConfigService } from './domain/ConfigService.js';
@@ -22,8 +23,8 @@ const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, interv
 export const fetchTransactions = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onRequest(async (req, res) => {
-  const { walletAddress, chain, fromBlock, toBlock, exportCsv } = req.query;
-  functions.logger.info('fetchTransactions requested', { walletAddress, chain, fromBlock, toBlock, exportCsv });
+  const { walletAddress, chain, fromBlock, toBlock, exportCsv, dryRun } = req.query;
+  functions.logger.info('fetchTransactions requested', { walletAddress, chain, fromBlock, toBlock, exportCsv, dryRun });
 
   if (!walletAddress || !chain) {
     res.status(400).send('Missing walletAddress or chain');
@@ -44,9 +45,10 @@ export const fetchTransactions = functions
     });
 
     const firestoreAdapter = new FirestoreAdapter(db);
+    const cacheService = new CacheService(firestoreAdapter, { dryRun: dryRun === 'true' });
     const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
-    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter, undefined, priceService, configService);
+    const priceService = new PriceService(alchemyAdapter, cacheService);
+    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, cacheService, undefined, priceService, configService);
 
     const transactions = await service.fetchAndCache({
       walletAddress: walletAddress as string,
@@ -74,8 +76,8 @@ export const fetchTransactions = functions
 });
 
 export const fetchBalances = functions.https.onRequest(async (req, res) => {
-  const { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache } = req.query;
-  functions.logger.info('fetchBalances requested', { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache });
+  const { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache, dryRun } = req.query;
+  functions.logger.info('fetchBalances requested', { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache, dryRun });
 
   if (!walletAddress || !chain) {
     res.status(400).send('Missing walletAddress or chain');
@@ -90,18 +92,20 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
     });
 
     const firestoreAdapter = new FirestoreAdapter(db);
+    const cacheService = new CacheService(firestoreAdapter, {
+      useCache: useCache !== 'false',
+      dryRun: dryRun === 'true',
+    });
     const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
-    
-    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, firestoreAdapter);
+    const priceService = new PriceService(alchemyAdapter, cacheService);
+
+    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, cacheService);
 
     const balances = await service.fetchBalances({
       walletAddress: walletAddress as string,
       chain: chain as string,
       blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
       includeUsd: includeUsd === 'true',
-      // Default to true
-      useCache: useCache !== 'false',
     });
 
     if (exportCsv === 'true') {
@@ -123,8 +127,8 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
 });
 
 export const fetchMultiBalances = functions.https.onRequest(async (req, res) => {
-  const { addresses, blockNumber, chainBlockNumbers, includeUsd, exportCsv, useCache } = req.body;
-  functions.logger.info('fetchMultiBalances requested', { addresses, blockNumber, includeUsd, exportCsv, useCache });
+  const { addresses, blockNumber, chainBlockNumbers, includeUsd, exportCsv, useCache, dryRun } = req.body;
+  functions.logger.info('fetchMultiBalances requested', { addresses, blockNumber, includeUsd, exportCsv, useCache, dryRun });
 
   try {
     const alchemyAdapter = new AlchemyAdapter({
@@ -134,16 +138,19 @@ export const fetchMultiBalances = functions.https.onRequest(async (req, res) => 
     });
 
     const firestoreAdapter = new FirestoreAdapter(db);
+    const cacheService = new CacheService(firestoreAdapter, {
+      useCache: useCache !== false,
+      dryRun: dryRun === true || dryRun === 'true',
+    });
     const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
-    
-    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, firestoreAdapter);
+    const priceService = new PriceService(alchemyAdapter, cacheService);
+
+    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, cacheService);
 
     const options: any = {
       blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
       chainBlockNumbers: chainBlockNumbers,
       includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
-      useCache: useCache !== false,
     };
 
     if (addresses && Array.isArray(addresses)) {
@@ -171,8 +178,8 @@ export const fetchMultiBalances = functions.https.onRequest(async (req, res) => 
 });
 
 export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (req, res) => {
-  const { addresses, timestamp, includeUsd, exportCsv, useCache } = req.body;
-  functions.logger.info('fetchMultiBalancesByTimestamp requested', { addresses, timestamp, includeUsd, exportCsv, useCache });
+  const { addresses, timestamp, includeUsd, exportCsv, useCache, dryRun } = req.body;
+  functions.logger.info('fetchMultiBalancesByTimestamp requested', { addresses, timestamp, includeUsd, exportCsv, useCache, dryRun });
 
   try {
     const alchemyAdapter = new AlchemyAdapter({
@@ -182,11 +189,15 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
     });
 
     const firestoreAdapter = new FirestoreAdapter(db);
+    const cacheService = new CacheService(firestoreAdapter, {
+      useCache: useCache !== false,
+      dryRun: dryRun === true || dryRun === 'true',
+    });
     const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
-    const blockService = new BlockService(alchemyAdapter, firestoreAdapter, configService);
-    
-    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, firestoreAdapter, blockService);
+    const priceService = new PriceService(alchemyAdapter, cacheService);
+    const blockService = new BlockService(alchemyAdapter, cacheService, configService);
+
+    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, cacheService, blockService);
 
     let targetDate: Date | undefined;
     if (timestamp) {
@@ -200,14 +211,13 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
     const options: any = {
       timestamp: targetDate,
       includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
-      useCache: useCache !== false,
     };
 
     if (addresses && Array.isArray(addresses)) {
       options.wallets = addresses.map(addr => ({ address: addr, label: 'Custom' }));
     }
 
-    const balances = targetDate 
+    const balances = targetDate
       ? await service.fetchMultiWalletBalancesByTimestamp(options)
       : await service.fetchMultiWalletBalances(options);
 
@@ -232,8 +242,8 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
 export const fetchMultiTransactions = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onRequest(async (req, res) => {
-  const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv } = req.body;
-  functions.logger.info('fetchMultiTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv });
+  const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv, dryRun } = req.body;
+  functions.logger.info('fetchMultiTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv, dryRun });
 
   try {
     const moralisAdapter = new MoralisAdapter({
@@ -249,14 +259,17 @@ export const fetchMultiTransactions = functions
     });
 
     const firestoreAdapter = new FirestoreAdapter(db);
+    const cacheService = new CacheService(firestoreAdapter, {
+      useCache: useCache !== false,
+      dryRun: dryRun === true || dryRun === 'true',
+    });
     const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, firestoreAdapter);
-    const blockService = new BlockService(alchemyAdapter, firestoreAdapter, configService);
-    
-    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, firestoreAdapter, blockService, priceService, configService);
+    const priceService = new PriceService(alchemyAdapter, cacheService);
+    const blockService = new BlockService(alchemyAdapter, cacheService, configService);
+
+    const service = new TransactionFetcherService(moralisAdapter, alchemyAdapter, cacheService, blockService, priceService, configService);
 
     const options: any = {
-      useCache: useCache !== false,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       fromBlock: fromBlock ? parseInt(fromBlock) : undefined,

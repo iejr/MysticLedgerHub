@@ -1,6 +1,6 @@
 import { MoralisAdapter } from '../infra/MoralisAdapter.js';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
-import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
+import { CacheService } from '../domain/CacheService.js';
 import { logger } from 'firebase-functions';
 import { MoralisParser } from '../domain/MoralisParser.js';
 import { AlchemyParser } from '../domain/AlchemyParser.js';
@@ -25,13 +25,12 @@ export interface FetchOptions {
   endDate?: Date;
   fromBlock?: number;
   toBlock?: number;
-  useCache?: boolean;
 }
 
 export class TransactionFetcherService {
   private moralisAdapter: MoralisAdapter;
   private alchemyAdapter: AlchemyAdapter;
-  private firestoreAdapter: FirestoreAdapter;
+  private cacheService: CacheService;
   private blockService?: BlockService;
   private priceService?: PriceService;
   private configService?: ConfigService;
@@ -41,14 +40,14 @@ export class TransactionFetcherService {
   constructor(
     moralisAdapter: MoralisAdapter,
     alchemyAdapter: AlchemyAdapter,
-    firestoreAdapter: FirestoreAdapter,
+    cacheService: CacheService,
     blockService?: BlockService,
     priceService?: PriceService,
     configService?: ConfigService
   ) {
     this.moralisAdapter = moralisAdapter;
     this.alchemyAdapter = alchemyAdapter;
-    this.firestoreAdapter = firestoreAdapter;
+    this.cacheService = cacheService;
     this.blockService = blockService;
     this.priceService = priceService;
     this.configService = configService;
@@ -83,7 +82,7 @@ export class TransactionFetcherService {
       allTransactions.push(...parsedBatch);
 
       for (const tx of parsedBatch) {
-        await this.firestoreAdapter.saveTransaction(walletAddress, tx.txHash, tx);
+        await this.cacheService.saveTransaction(walletAddress, tx.txHash, tx);
       }
     }
 
@@ -162,7 +161,7 @@ export class TransactionFetcherService {
       logger.info(`Completed ERC20 discovery for ${chain}. Discovered ${discoveredERC20Hashes.size} hashes.`);
 
       const allDiscoveredHashes = new Set([...discoveredTraceHashes, ...discoveredERC20Hashes]);
-      await this.fetchAndEnrichTraceTransactions(chain, allDiscoveredHashes, walletSet, txHashMap, options);
+      await this.fetchAndEnrichTraceTransactions(chain, allDiscoveredHashes, walletSet, txHashMap);
     }
 
     txHashMap.forEach((txs) => {
@@ -206,7 +205,7 @@ export class TransactionFetcherService {
       const discoveredTxHashes = await this.discoverAssetTransfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, options);
       logger.info(`Discovered ${discoveredTxHashes.size} unique hashes for ${chain} via Fast discovery`);
 
-      await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap, options);
+      await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap);
     }
 
     txHashMap.forEach((txs) => {
@@ -336,7 +335,7 @@ export class TransactionFetcherService {
             if (t.metadata?.blockTimestamp) {
               const ts = Math.floor(new Date(t.metadata.blockTimestamp).getTime() / 1000);
               const blockNum = parseInt(t.blockNum, 16);
-              await this.firestoreAdapter.saveBlockMapping(chain, ts, blockNum);
+              await this.cacheService.saveBlockMapping(chain, ts, blockNum);
             }
           }
 
@@ -344,7 +343,7 @@ export class TransactionFetcherService {
           for (const [txHash, txTransfers] of Object.entries(transfersByHash)) {
             const parsed = this.alchemyParser.parse(txTransfers, wallet.address);
             if (parsed.length > 0 && parsed[0].tokenTransfers.length > 0) {
-              await this.firestoreAdapter.saveDiscoveredTokenTransfers(chain, txHash, parsed[0].tokenTransfers);
+              await this.cacheService.saveDiscoveredTokenTransfers(chain, txHash, parsed[0].tokenTransfers);
             }
           }
         }
@@ -358,17 +357,14 @@ export class TransactionFetcherService {
     discoveredTxHashes: Set<string>,
     walletSet: Set<string>,
     txHashMap: Map<string, UnifiedTransaction>,
-    options: FetchOptions
   ): Promise<void> {
     const txHashesToFetch: string[] = [];
 
     for (const hash of discoveredTxHashes) {
-      if (options.useCache !== false) {
-        const cachedTransactionsObj = await this.firestoreAdapter.getCanonicalTransaction(chain, hash);
-        if (cachedTransactionsObj && this.filterTransactionByAddress(cachedTransactionsObj.payload, walletSet)) {
-          txHashMap.set(`${chain}_${hash}`, cachedTransactionsObj.payload);
-          continue;
-        }
+      const cachedTransactionsObj = await this.cacheService.getCanonicalTransaction(chain, hash);
+      if (cachedTransactionsObj && this.filterTransactionByAddress(cachedTransactionsObj.payload, walletSet)) {
+        txHashMap.set(`${chain}_${hash}`, cachedTransactionsObj.payload);
+        continue;
       }
       txHashesToFetch.push(hash);
     }
@@ -414,7 +410,7 @@ export class TransactionFetcherService {
           }
 
           // Merge with cached token transfers from discovery
-          const cachedTokenTransfers = await this.firestoreAdapter.getDiscoveredTokenTransfers(chain, txHash);
+          const cachedTokenTransfers = await this.cacheService.getDiscoveredTokenTransfers(chain, txHash);
           if (cachedTokenTransfers) {
             for (const ct of cachedTokenTransfers) {
               const isDuplicate = parsedTransaction.tokenTransfers.some(
@@ -438,11 +434,8 @@ export class TransactionFetcherService {
           await this.enrichTraceTransaction(chain, txHash, parsedTransaction);
 
           const involvedAddresses = this.extractAddressfromTransaction(parsedTransaction);
-          if (options.useCache !== false) {
-            await this.firestoreAdapter.saveCanonicalTransaction(chain, txHash, parsedTransaction, Array.from(involvedAddresses));
-            // Save raw transaction
-            await this.firestoreAdapter.saveRawTransaction(chain, txHash, "alchemy_trace_transaction", traces);
-          }
+          await this.cacheService.saveCanonicalTransaction(chain, txHash, parsedTransaction, Array.from(involvedAddresses));
+          await this.cacheService.saveRawTransaction(chain, txHash, "alchemy_trace_transaction", traces);
 
           txHashMap.set(`${chain}_${txHash}`, parsedTransaction);
         }

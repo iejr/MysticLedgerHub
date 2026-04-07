@@ -1,29 +1,29 @@
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
-import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
+import { CacheService } from './CacheService.js';
 
 export class PriceService {
   private alchemyAdapter: AlchemyAdapter;
-  private firestoreAdapter: FirestoreAdapter;
+  private cacheService: CacheService;
 
-  constructor(alchemyAdapter: AlchemyAdapter, firestoreAdapter: FirestoreAdapter) {
+  constructor(alchemyAdapter: AlchemyAdapter, cacheService: CacheService) {
     this.alchemyAdapter = alchemyAdapter;
-    this.firestoreAdapter = firestoreAdapter;
+    this.cacheService = cacheService;
   }
 
   async getPriceAtTime(symbol: string, targetTime: Date): Promise<number | undefined> {
     const targetISO = targetTime.toISOString();
-    
+
     // 1. Check Cache (Look for a range of +/- 10 min around the target time)
     const startTime = new Date(targetTime.getTime() - 10 * 60 * 1000).toISOString();
     const endTime = new Date(targetTime.getTime() + 10 * 60 * 1000).toISOString();
-    
-    let cachedPrices = await this.firestoreAdapter.getPricesInRange(symbol, startTime, endTime);
-    
+
+    let cachedPrices = await this.cacheService.getPricesInRange(symbol, startTime, endTime);
+
     if (cachedPrices.length === 0) {
       // 2. Fetch from Alchemy if not in cache (fetch +/- 1 hour range to populate cache)
       const fetchStart = new Date(targetTime.getTime() - 60 * 60 * 1000).toISOString();
       const fetchEnd = new Date(targetTime.getTime() + 60 * 60 * 1000).toISOString();
-      
+
       const response = await this.alchemyAdapter.fetchHistoricalPrices({
         symbol,
         startTime: fetchStart,
@@ -34,7 +34,7 @@ export class PriceService {
       if (response) {
         // Save all fetched prices to cache
         for (const p of response.data) {
-          await this.firestoreAdapter.savePrice(response.symbol, p.timestamp, p.value);
+          await this.cacheService.savePrice(response.symbol, p.timestamp, p.value);
         }
         cachedPrices = response.data;
       }
