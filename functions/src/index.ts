@@ -22,8 +22,8 @@ const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, interv
 export const fetchTransactions = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onRequest(async (req, res) => {
-  const { walletAddress, chain, fromBlock, toBlock } = req.query;
-  functions.logger.info('fetchTransactions requested', { walletAddress, chain, fromBlock, toBlock });
+  const { walletAddress, chain, fromBlock, toBlock, exportCsv } = req.query;
+  functions.logger.info('fetchTransactions requested', { walletAddress, chain, fromBlock, toBlock, exportCsv });
 
   if (!walletAddress || !chain) {
     res.status(400).send('Missing walletAddress or chain');
@@ -55,10 +55,18 @@ export const fetchTransactions = functions
       toBlock: toBlock ? parseInt(toBlock as string) : undefined,
     });
 
-    res.status(200).json({
-      count: transactions.length,
-      message: 'Transactions fetched and cached successfully',
-    });
+    if (exportCsv === 'true') {
+      const csvService = new CsvService(configService);
+      const csv = csvService.generateTransactionCsv(transactions);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=transactions_${walletAddress}_${chain}.csv`);
+      res.status(200).send(csv);
+    } else {
+      res.status(200).json({
+        count: transactions.length,
+        message: 'Transactions fetched and cached successfully',
+      });
+    }
   } catch (error: any) {
     console.error('Error fetching transactions:', error);
     res.status(500).send(error.message);
@@ -224,8 +232,8 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
 export const fetchMultiTransactions = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onRequest(async (req, res) => {
-  const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache } = req.body;
-  functions.logger.info('fetchMultiTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache });
+  const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv } = req.body;
+  functions.logger.info('fetchMultiTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv });
 
   try {
     const moralisAdapter = new MoralisAdapter({
@@ -264,10 +272,18 @@ export const fetchMultiTransactions = functions
 
     const transactions = await service.fetchMultiWalletTransactions(options);
 
-    res.status(200).json({
-      count: transactions.length,
-      transactions,
-    });
+    if (exportCsv === true || exportCsv === 'true') {
+      const csvService = new CsvService(configService);
+      const csv = csvService.generateTransactionCsv(transactions, options.wallets);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=multi_transactions.csv');
+      res.status(200).send(csv);
+    } else {
+      res.status(200).json({
+        count: transactions.length,
+        transactions,
+      });
+    }
   } catch (error: any) {
     console.error('Error fetching multi transactions:', error);
     res.status(500).send(error.message);
