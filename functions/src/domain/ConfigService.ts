@@ -44,6 +44,8 @@ export interface ChainMetadata {
   name: string;
   nativeSymbol: string;
   averageBlockTime: number;
+  /** Whether block times are roughly uniform. When false, binary search is used instead of interpolation. Default true. */
+  linearBlockTime: boolean;
   startBlock: number;
   explorerUrl: string;
   /** EVM network chain ID — optional, for reference/interop only */
@@ -111,8 +113,8 @@ export class ConfigService {
     const key = chain.toLowerCase();
     const meta = this.chainConfig[key];
     if (!meta) return undefined;
-    // Inject the system id (YAML map key) into the returned object
-    return { ...meta, id: key };
+    // Inject the system id and defaults
+    return { ...meta, id: key, linearBlockTime: meta.linearBlockTime ?? true };
   }
 
   getTokenByAddress(chain: string, address: string): TokenMetadata | undefined {

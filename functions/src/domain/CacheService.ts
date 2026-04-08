@@ -83,14 +83,14 @@ export class CacheService {
 
   // --- Prices ---
 
-  async getPricesInRange(symbol: string, startTime: string, endTime: string): Promise<any[]> {
+  async getPricesInRange(tokenId: string, startTime: string, endTime: string): Promise<any[]> {
     if (!this.readEnabled) return [];
-    return this.firestoreAdapter.getPricesInRange(symbol, startTime, endTime);
+    return this.firestoreAdapter.getPricesInRange(tokenId, startTime, endTime);
   }
 
-  async savePrice(symbol: string, timestamp: string, value: string): Promise<void> {
+  async savePrice(tokenId: string, timestamp: string, value: string): Promise<void> {
     if (!this.writeEnabled) return;
-    await this.firestoreAdapter.savePrice(symbol, timestamp, value);
+    await this.firestoreAdapter.savePrice(tokenId, timestamp, value);
   }
 
   // --- Legacy per-wallet transactions ---

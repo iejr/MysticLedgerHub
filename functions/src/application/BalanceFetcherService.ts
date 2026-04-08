@@ -119,7 +119,11 @@ export class BalanceFetcherService {
       };
 
       if (includeUsd) {
-        const usdPrice = await this.priceService.getPriceAtTime(token.symbol, blockTimeDate);
+        const usdPrice = await this.priceService.getPriceAtTime(
+          token.id,
+          { symbol: token.symbol, chain, contractAddress: token.chains[chain.toLowerCase()]?.address },
+          blockTimeDate
+        );
         if (usdPrice !== undefined) {
           balance.usdPrice = usdPrice;
           balance.usdBalance = parseFloat(balance.balanceFormatted) * usdPrice;
@@ -210,7 +214,11 @@ export class BalanceFetcherService {
         };
 
         if (globalIncludeUsd) {
-          const usdPrice = await this.priceService.getPriceAtTime(token.symbol, blockTimeDate);
+          const usdPrice = await this.priceService.getPriceAtTime(
+            token.id,
+            { symbol: token.symbol, chain, contractAddress: token.chains[chain.toLowerCase()]?.address },
+            blockTimeDate
+          );
           if (usdPrice !== undefined) {
             balance.usdPrice = usdPrice;
             balance.usdBalance = parseFloat(balance.balanceFormatted) * usdPrice;

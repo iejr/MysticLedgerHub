@@ -55,7 +55,12 @@ export interface HistoricalPriceResult {
 }
 
 export interface HistoricalPriceParams {
-  symbol: string;
+  /** Token symbol — used for native tokens or as fallback */
+  symbol?: string;
+  /** Token contract address — preferred for ERC-20 tokens */
+  address?: string;
+  /** Alchemy network slug — required when using address */
+  network?: string;
   startTime: string; // ISO 8601
   endTime: string;   // ISO 8601
   interval: '5m' | '1h' | '1d';

@@ -1,5 +1,15 @@
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
+import { HistoricalPriceParams } from '../infra/types.js';
 import { CacheService } from './CacheService.js';
+
+export interface PriceLookupOptions {
+  /** Public ticker symbol — always provided as fallback for native tokens */
+  symbol: string;
+  /** Internal chain ID — needed to resolve network slug for address-based queries */
+  chain?: string;
+  /** Token contract address on the given chain — when present, address-based query is preferred */
+  contractAddress?: string;
+}
 
 export class PriceService {
   private alchemyAdapter: AlchemyAdapter;
@@ -10,29 +20,37 @@ export class PriceService {
     this.cacheService = cacheService;
   }
 
-  async getPriceAtTime(symbol: string, targetTime: Date): Promise<number | undefined> {
+  async getPriceAtTime(tokenId: string, options: PriceLookupOptions, targetTime: Date): Promise<number | undefined> {
     // 1. Check Cache (Look for a range of +/- 10 min around the target time)
     const startTime = new Date(targetTime.getTime() - 10 * 60 * 1000).toISOString();
     const endTime = new Date(targetTime.getTime() + 10 * 60 * 1000).toISOString();
 
-    let cachedPrices = await this.cacheService.getPricesInRange(symbol, startTime, endTime);
+    let cachedPrices = await this.cacheService.getPricesInRange(tokenId, startTime, endTime);
 
     if (cachedPrices.length === 0) {
       // 2. Fetch from provider if not in cache (fetch +/- 1 hour range to populate cache)
       const fetchStart = new Date(targetTime.getTime() - 60 * 60 * 1000).toISOString();
       const fetchEnd = new Date(targetTime.getTime() + 60 * 60 * 1000).toISOString();
 
-      const response = await this.alchemyAdapter.fetchHistoricalPrices({
-        symbol,
+      // Build query params: prefer address+network for ERC-20, fall back to symbol
+      const priceParams: HistoricalPriceParams = {
         startTime: fetchStart,
         endTime: fetchEnd,
         interval: '5m',
-      });
+      };
 
-      if (response) {
-        // Save all fetched prices to cache
+      if (options.contractAddress && options.chain) {
+        priceParams.address = options.contractAddress;
+        priceParams.network = AlchemyAdapter.getNetworkSlug(options.chain);
+      } else {
+        priceParams.symbol = options.symbol;
+      }
+
+      const response = await this.alchemyAdapter.fetchHistoricalPrices(priceParams);
+
+      if (response && response.prices) {
         for (const p of response.prices) {
-          await this.cacheService.savePrice(response.symbol, p.timestamp, p.value);
+          await this.cacheService.savePrice(tokenId, p.timestamp, p.value);
         }
         cachedPrices = response.prices;
       }

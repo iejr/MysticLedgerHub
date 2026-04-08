@@ -458,14 +458,22 @@ export class TransactionFetcherService {
   private async enrichTransactionWithUSD(tx: UnifiedTransaction): Promise<void> {
     if (!this.priceService) return;
 
+    const chain = tx.chain;
     let nativeSymbol = "ETH";
+    let nativeTokenId = "native-eth";
     if (this.configService) {
-      const meta = this.configService.getChainMetadata(tx.chain);
+      const meta = this.configService.getChainMetadata(chain);
       if (meta) nativeSymbol = meta.nativeSymbol;
+      const nativeToken = this.configService.getTokensForChain(chain).find(t => t.type === 'native');
+      if (nativeToken) nativeTokenId = nativeToken.id;
     }
 
     try {
-      const nativeUsdPrice = await this.priceService.getPriceAtTime(nativeSymbol, new Date(tx.blockTime));
+      const nativeUsdPrice = await this.priceService.getPriceAtTime(
+        nativeTokenId,
+        { symbol: nativeSymbol, chain },
+        new Date(tx.blockTime)
+      );
       if (nativeUsdPrice !== undefined) {
         tx.usdPrice = nativeUsdPrice;
         for (const nt of tx.nativeTransfers) {
@@ -477,13 +485,17 @@ export class TransactionFetcherService {
     }
 
     for (const tt of tx.tokenTransfers) {
-      if (tt.tokenSymbol === 'UNKNOWN') {
+      if (tt.tokenSymbol === 'UNKNOWN' || !tt.tokenId) {
         tt.usdValue = 0;
         continue;
       }
 
       try {
-        const tokenUsdPrice = await this.priceService.getPriceAtTime(tt.tokenSymbol, new Date(tx.blockTime));
+        const tokenUsdPrice = await this.priceService.getPriceAtTime(
+          tt.tokenId,
+          { symbol: tt.tokenSymbol, chain, contractAddress: tt.tokenAddress },
+          new Date(tx.blockTime)
+        );
         if (tokenUsdPrice !== undefined) {
           tt.usdValue = parseFloat(tt.valueFormatted) * tokenUsdPrice;
         }

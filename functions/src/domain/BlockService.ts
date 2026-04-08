@@ -2,6 +2,9 @@ import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { CacheService } from './CacheService.js';
 import { ConfigService } from './ConfigService.js';
 
+/** Threshold multiplier: if interpolation error exceeds this × averageBlockTime, switch to binary */
+const INTERPOLATION_ERROR_THRESHOLD = 10;
+
 export class BlockService {
   private alchemyAdapter: AlchemyAdapter;
   private cacheService: CacheService;
@@ -39,22 +42,35 @@ export class BlockService {
     let lowTs = lowBlock!.timestamp;
     let highTs = latestTs;
 
-    // 3. Linear Interpolation Search
+    // Determine search strategy: config says non-linear → binary from the start
+    let useBinarySearch = !chainMeta.linearBlockTime;
+
+    // 3. Search loop
     let iterations = 0;
-    while (low <= high && iterations < 15) {
+    while (low <= high && iterations < 20) {
       iterations++;
 
-      // Heuristic mid-point
-      let mid = low + Math.floor(((targetTs - lowTs) / (highTs - lowTs)) * (high - low));
-
-      // Safety bounds
-      mid = Math.max(low, Math.min(high, mid));
+      let mid: number;
+      if (useBinarySearch) {
+        mid = Math.floor((low + high) / 2);
+      } else {
+        // Linear interpolation
+        mid = low + Math.floor(((targetTs - lowTs) / (highTs - lowTs)) * (high - low));
+        mid = Math.max(low, Math.min(high, mid));
+      }
 
       const midBlock = await this.alchemyAdapter.getBlock(mid);
       const midTs = midBlock!.timestamp;
 
+      // Auto-detect: if interpolation error is too large on first probe, switch to binary
+      if (!useBinarySearch && iterations === 1) {
+        const errorSeconds = Math.abs(midTs - targetTs);
+        if (errorSeconds > INTERPOLATION_ERROR_THRESHOLD * chainMeta.averageBlockTime) {
+          useBinarySearch = true;
+        }
+      }
+
       if (Math.abs(midTs - targetTs) < chainMeta.averageBlockTime) {
-        // Close enough
         await this.cacheService.saveBlockMapping(chain, targetTs, mid);
         return mid;
       }

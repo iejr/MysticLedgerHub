@@ -41,6 +41,11 @@ export class AlchemyAdapter extends BaseAdapter {
     this.apiKey = config.apiKey;
   }
 
+  // Resolve internal chain ID to Alchemy network slug
+  static getNetworkSlug(chain: string): string {
+    return CHAIN_SLUGS[chain.toLowerCase()] || `${chain.toLowerCase()}-mainnet`;
+  }
+
   // Accepts internal chain ID (e.g. "ethereum", "base")
   setChain(chain: string) {
     const slug = CHAIN_SLUGS[chain.toLowerCase()] || `${chain.toLowerCase()}-mainnet`;
@@ -240,13 +245,22 @@ export class AlchemyAdapter extends BaseAdapter {
     return response.result;
   }
 
-  // Historical token prices — returns domain-friendly shape
+  // Historical token prices — supports address+network (ERC-20) or symbol (native) queries
   async fetchHistoricalPrices(params: HistoricalPriceParams): Promise<HistoricalPriceResult> {
-    const { symbol, startTime, endTime, interval } = params;
+    const { symbol, address, network, startTime, endTime, interval } = params;
+
+    const body: any = { startTime, endTime, interval };
+    if (address && network) {
+      body.address = address;
+      body.network = network;
+    } else if (symbol) {
+      body.symbol = symbol;
+    }
+
     const raw: AlchemyHistoricalPriceResponse = await this.fetchWithRetry({
       method: 'POST',
       url: `https://api.g.alchemy.com/prices/v1/${this.apiKey}/tokens/historical`,
-      data: { symbol, startTime, endTime, interval },
+      data: body,
     });
 
     return {

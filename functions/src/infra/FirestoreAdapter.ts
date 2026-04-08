@@ -23,12 +23,12 @@ export class FirestoreAdapter {
     return doc.data();
   }
 
-  // Price Caching
-  async savePrice(symbol: string, timestamp: string, value: string): Promise<void> {
+  // Price Caching — keyed by tokenId (internal system ID)
+  async savePrice(tokenId: string, timestamp: string, value: string): Promise<void> {
     const dateStr = timestamp.split('T')[0]; // Cache by date to organize
-    const docId = `${symbol.toUpperCase()}_${timestamp}`;
+    const docId = `${tokenId}_${timestamp}`;
     await this.db.collection('token_prices').doc(docId).set({
-      symbol: symbol.toUpperCase(),
+      tokenId,
       timestamp,
       date: dateStr,
       value,
@@ -36,13 +36,13 @@ export class FirestoreAdapter {
     });
   }
 
-  async getPricesInRange(symbol: string, startTime: string, endTime: string): Promise<any[]> {
+  async getPricesInRange(tokenId: string, startTime: string, endTime: string): Promise<any[]> {
     const snapshot = await this.db.collection('token_prices')
-      .where('symbol', '==', symbol.toUpperCase())
+      .where('tokenId', '==', tokenId)
       .where('timestamp', '>=', startTime)
       .where('timestamp', '<=', endTime)
       .get();
-    
+
     return snapshot.docs.map(doc => doc.data());
   }
 
