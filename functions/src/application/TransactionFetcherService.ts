@@ -1,5 +1,6 @@
 import { MoralisAdapter } from '../infra/MoralisAdapter.js';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
+import { AssetTransfer } from '../infra/types.js';
 import { CacheService } from '../domain/CacheService.js';
 import { logger } from 'firebase-functions';
 import { MoralisParser } from '../domain/MoralisParser.js';
@@ -10,7 +11,6 @@ import {
   NativeTransfer,
   TokenTransfer,
 } from "../domain/types.js";
-import { AlchemyRequestConverter } from "../domain/RequestConverters.js";
 
 import { BlockService } from "../domain/BlockService.js";
 import { PriceService } from '../domain/PriceService.js';
@@ -65,18 +65,19 @@ export class TransactionFetcherService {
 
     const allTransactions: UnifiedTransaction[] = [];
 
-    const alchemyParams = AlchemyRequestConverter.fromFetchOptions({
-      ...options,
-      walletAddress,
-      chain,
+    this.alchemyAdapter.setChain(chain);
+    const iterator = this.alchemyAdapter.getAssetTransferIterator({
+      fromAddress: walletAddress,
+      fromBlock: options.fromBlock,
+      toBlock: options.toBlock,
+      category: ['external', 'erc20', 'erc721', 'erc1155'],
+      withMetadata: true,
+      excludeZeroValue: true,
     });
-    const chainUrl = AlchemyRequestConverter.getChainUrl(chain);
-
-    this.alchemyAdapter.setChain(chainUrl);
-    const iterator = this.alchemyAdapter.getTransactionsIterator(alchemyParams);
 
     for await (const batch of iterator) {
-      const parsedBatch = this.alchemyParser.parse(batch, walletAddress);
+      const rawBatch = batch.map(t => t.rawData);
+      const parsedBatch = this.alchemyParser.parse(rawBatch, walletAddress);
       parsedBatch.forEach((tx) => (tx.chain = chain));
 
       allTransactions.push(...parsedBatch);
@@ -90,12 +91,10 @@ export class TransactionFetcherService {
   }
 
   filterTransactionByAddress(transaction: UnifiedTransaction, addresses: Set<string>): boolean {
-    // Check native transfers
     for (const transfer of transaction.nativeTransfers) {
       if (transfer.from && addresses.has(transfer.from.toLowerCase())) return true;
       if (transfer.to && addresses.has(transfer.to.toLowerCase())) return true;
     }
-    // Check token transfers
     for (const transfer of transaction.tokenTransfers) {
       if (transfer.from && addresses.has(transfer.from.toLowerCase())) return true;
       if (transfer.to && addresses.has(transfer.to.toLowerCase())) return true;
@@ -149,15 +148,15 @@ export class TransactionFetcherService {
 
     for (const chain of chains) {
       logger.info(`Processing chain: ${chain}`);
-      this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+      this.alchemyAdapter.setChain(chain);
 
-      const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
-      logger.info(`Resolved block range for ${chain}: ${hexFromBlock} to ${hexToBlock}`);
+      const { fromBlock, toBlock } = await this.resolveBlockRange(chain, options);
+      logger.info(`Resolved block range for ${chain}: ${fromBlock} to ${toBlock}`);
 
-      const discoveredTraceHashes = await this.discoverTraceHashes(discoveryAddresses, hexFromBlock, hexToBlock);
+      const discoveredTraceHashes = await this.discoverTraceHashes(discoveryAddresses, fromBlock, toBlock);
       logger.info(`Discovered ${discoveredTraceHashes.size} unique trace hashes for ${chain}`);
 
-      const discoveredERC20Hashes = await this.discoverERC20Transfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, options);
+      const discoveredERC20Hashes = await this.discoverERC20Transfers(chain, discoveryAddresses, fromBlock, toBlock, options);
       logger.info(`Completed ERC20 discovery for ${chain}. Discovered ${discoveredERC20Hashes.size} hashes.`);
 
       const allDiscoveredHashes = new Set([...discoveredTraceHashes, ...discoveredERC20Hashes]);
@@ -198,11 +197,11 @@ export class TransactionFetcherService {
 
     for (const chain of chains) {
       logger.info(`Processing chain (Fast): ${chain}`);
-      this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+      this.alchemyAdapter.setChain(chain);
 
-      const { hexFromBlock, hexToBlock } = await this.resolveBlockRange(chain, options);
+      const { fromBlock, toBlock } = await this.resolveBlockRange(chain, options);
 
-      const discoveredTxHashes = await this.discoverAssetTransfers(chain, discoveryAddresses, hexFromBlock, hexToBlock, options);
+      const discoveredTxHashes = await this.discoverAssetTransfers(chain, discoveryAddresses, fromBlock, toBlock, options);
       logger.info(`Discovered ${discoveredTxHashes.size} unique hashes for ${chain} via Fast discovery`);
 
       await this.fetchAndEnrichTraceTransactions(chain, discoveredTxHashes, walletSet, txHashMap);
@@ -215,11 +214,10 @@ export class TransactionFetcherService {
     return allResults;
   }
 
-  private async resolveBlockRange(chain: string, options: FetchOptions): Promise<{ hexFromBlock: string, hexToBlock: string }> {
+  private async resolveBlockRange(chain: string, options: FetchOptions): Promise<{ fromBlock?: number, toBlock?: number }> {
     let fromBlock = options.fromBlock;
     let toBlock = options.toBlock;
 
-    // Use timestamp range if block range is not specified
     if (!fromBlock && !toBlock) {
       if (options.startDate && this.blockService) {
         fromBlock = await this.blockService.findBlockByTimestamp(chain, options.startDate);
@@ -229,38 +227,31 @@ export class TransactionFetcherService {
       }
     }
 
-    return {
-      hexFromBlock: fromBlock ? `0x${fromBlock.toString(16)}` : '0x0',
-      hexToBlock: toBlock ? `0x${toBlock.toString(16)}` : 'latest',
-    };
+    return { fromBlock, toBlock };
   }
 
-  private async discoverTraceHashes(wallets: { address: string }[], hexFromBlock: string, hexToBlock: string): Promise<Set<string>> {
+  private async discoverTraceHashes(wallets: { address: string }[], fromBlock?: number, toBlock?: number): Promise<Set<string>> {
     const discoveredTxHashes = new Set<string>();
 
     for (const wallet of wallets) {
       const tracesFrom = await this.alchemyAdapter.fetchTraceFilterTransactions({
         fromAddress: [wallet.address.toLowerCase()],
-        fromBlock: hexFromBlock,
-        toBlock: hexToBlock,
+        fromBlock,
+        toBlock,
       });
 
-      if (tracesFrom.result) {
-        tracesFrom.result.forEach((t: any) => {
-          if (t.transactionHash) discoveredTxHashes.add(t.transactionHash);
-        });
+      for (const t of tracesFrom) {
+        if (t.transactionHash) discoveredTxHashes.add(t.transactionHash);
       }
 
       const tracesTo = await this.alchemyAdapter.fetchTraceFilterTransactions({
         toAddress: [wallet.address.toLowerCase()],
-        fromBlock: hexFromBlock,
-        toBlock: hexToBlock,
+        fromBlock,
+        toBlock,
       });
 
-      if (tracesTo.result) {
-        tracesTo.result.forEach((t: any) => {
-          if (t.transactionHash) discoveredTxHashes.add(t.transactionHash);
-        });
+      for (const t of tracesTo) {
+        if (t.transactionHash) discoveredTxHashes.add(t.transactionHash);
       }
     }
 
@@ -270,18 +261,18 @@ export class TransactionFetcherService {
   private async discoverERC20Transfers(
     chain: string,
     wallets: { address: string }[],
-    hexFromBlock: string,
-    hexToBlock: string,
+    fromBlock: number | undefined,
+    toBlock: number | undefined,
     options: FetchOptions
   ): Promise<Set<string>> {
-    return this.discoverAssetTransfers(chain, wallets, hexFromBlock, hexToBlock, options, ["erc20"]);
+    return this.discoverAssetTransfers(chain, wallets, fromBlock, toBlock, options, ["erc20"]);
   }
 
   private async discoverAssetTransfers(
     chain: string,
     wallets: { address: string }[],
-    hexFromBlock: string,
-    hexToBlock: string,
+    fromBlock: number | undefined,
+    toBlock: number | undefined,
     options: FetchOptions,
     categories: string[] = ["external", "erc20"]
   ): Promise<Set<string>> {
@@ -300,30 +291,30 @@ export class TransactionFetcherService {
 
     for (const wallet of wallets) {
       const fromParams = {
-        fromBlock: hexFromBlock,
-        toBlock: hexToBlock,
+        fromBlock,
+        toBlock,
         fromAddress: wallet.address.toLowerCase(),
         category: categories,
         withMetadata: true,
       };
 
       const toParams = {
-        fromBlock: hexFromBlock,
-        toBlock: hexToBlock,
+        fromBlock,
+        toBlock,
         toAddress: wallet.address.toLowerCase(),
         category: categories,
         withMetadata: true,
       };
 
       for (const params of [fromParams, toParams]) {
-        const iterator = this.alchemyAdapter.getTransactionsIterator(params as any);
+        const iterator = this.alchemyAdapter.getAssetTransferIterator(params);
         for await (const transfers of iterator) {
-          const transfersByHash: Record<string, any[]> = {};
+          const transfersByHash: Record<string, AssetTransfer[]> = {};
 
           for (const t of transfers) {
             // Spam filtering for ERC20
             if (t.category === 'erc20') {
-              const tokenAddr = t.rawContract?.address?.toLowerCase() || '';
+              const tokenAddr = t.contractAddress?.toLowerCase() || '';
               if (!allowedTokenAddresses.has(tokenAddr)) continue;
             }
 
@@ -332,16 +323,16 @@ export class TransactionFetcherService {
             transfersByHash[t.hash].push(t);
 
             // Cache block metadata if present
-            if (t.metadata?.blockTimestamp) {
-              const ts = Math.floor(new Date(t.metadata.blockTimestamp).getTime() / 1000);
-              const blockNum = parseInt(t.blockNum, 16);
-              await this.cacheService.saveBlockMapping(chain, ts, blockNum);
+            if (t.blockTimestamp) {
+              const ts = Math.floor(new Date(t.blockTimestamp).getTime() / 1000);
+              await this.cacheService.saveBlockMapping(chain, ts, t.blockNumber);
             }
           }
 
           // Cache token transfers for each hash
           for (const [txHash, txTransfers] of Object.entries(transfersByHash)) {
-            const parsed = this.alchemyParser.parse(txTransfers, wallet.address);
+            const rawBatch = txTransfers.map(t => t.rawData);
+            const parsed = this.alchemyParser.parse(rawBatch, wallet.address);
             if (parsed.length > 0 && parsed[0].tokenTransfers.length > 0) {
               await this.cacheService.saveDiscoveredTokenTransfers(chain, txHash, parsed[0].tokenTransfers);
             }
@@ -380,10 +371,9 @@ export class TransactionFetcherService {
 
       for (let i = 0; i < batchResults.length; i++) {
         const txHash = txHashesToFetch[i];
-        const res = batchResults[i];
+        const traces = batchResults[i];
 
-        if (res && res.result) {
-          const traces = res.result;
+        if (traces) {
           const distillationResult = this.alchemyParser.distillTrace(traces, chain);
           if (!distillationResult) continue;
 
@@ -426,7 +416,6 @@ export class TransactionFetcherService {
           }
 
           if (!this.filterTransactionByAddress(parsedTransaction, walletSet)) {
-            // To filter out the transactions that only assist addresses are involved
             continue;
           }
 
@@ -444,7 +433,6 @@ export class TransactionFetcherService {
   }
 
   private async enrichTraceTransaction(chain: string, txHash: string, parsedTransaction: UnifiedTransaction): Promise<void> {
-    // Resolve blockTime if needed
     if (this.blockService) {
       try {
         parsedTransaction.blockTime = await this.blockService.getBlockTime(chain, parsedTransaction.blockNumber);
@@ -453,11 +441,9 @@ export class TransactionFetcherService {
       }
     }
 
-    // Set human-readable chain name
     if (this.configService) {
       parsedTransaction.chainName = this.configService.getChainMetadata(chain)?.name;
 
-      // Resolve tokenId for all token transfers by matching address against config
       for (const tt of parsedTransaction.tokenTransfers) {
         if (!tt.tokenId && tt.tokenAddress) {
           const tokenConfig = this.configService.getTokenByAddress(chain, tt.tokenAddress);

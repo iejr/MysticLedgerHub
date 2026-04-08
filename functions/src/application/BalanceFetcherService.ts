@@ -1,8 +1,8 @@
 import { logger } from 'firebase-functions';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
+import { BalanceBatchRequest } from '../infra/types.js';
 import { ConfigService, WalletMetadata } from '../domain/ConfigService.js';
 import { UnifiedBalance } from '../domain/types.js';
-import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 import { PriceService } from '../domain/PriceService.js';
 import { BlockService } from '../domain/BlockService.js';
 import { CacheService } from '../domain/CacheService.js';
@@ -53,9 +53,8 @@ export class BalanceFetcherService {
   async fetchBalances(options: BalanceFetchOptions): Promise<UnifiedBalance[]> {
     const { walletAddress, chain, blockNumber, includeUsd } = options;
     logger.info(`Fetching balances for ${walletAddress} on ${chain}`, { blockNumber, includeUsd });
-    const blockTag = blockNumber ? `0x${blockNumber.toString(16)}` : 'latest';
 
-    this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+    this.alchemyAdapter.setChain(chain);
 
     const tokens = this.configService.getTokensForChain(chain);
 
@@ -77,28 +76,30 @@ export class BalanceFetcherService {
       return finalBalances;
     }
 
-    // Fetch missing balances from Alchemy
-    logger.info(`Fetching ${tokensToFetch.length} balances from Alchemy for ${walletAddress} on ${chain}...`);
-    const requests = tokensToFetch.map(token => {
+    // Fetch missing balances from provider
+    logger.info(`Fetching ${tokensToFetch.length} balances for ${walletAddress} on ${chain}...`);
+    const batchRequests: BalanceBatchRequest[] = tokensToFetch.map(token => {
       if (token.type === 'native') {
-        return { method: 'eth_getBalance', params: [walletAddress, blockTag] };
+        return { type: 'native' as const, walletAddress };
       } else {
-        const contractAddress = token.chains[chain.toLowerCase()]?.address;
-        const data = `0x70a08231000000000000000000000000${walletAddress.toLowerCase().replace('0x', '')}`;
-        return { method: 'eth_call', params: [{ to: contractAddress, data }, blockTag] };
+        return {
+          type: 'erc20' as const,
+          walletAddress,
+          contractAddress: token.chains[chain.toLowerCase()]?.address,
+        };
       }
     });
 
-    const batchResults = await this.alchemyAdapter.sendBatch(requests);
+    const batchResults = await this.alchemyAdapter.sendBalanceBatch(batchRequests, blockNumber || 'latest');
 
     // Resolve block timestamp
-    const block = await this.alchemyAdapter.getBlock(blockTag);
-    const blocktime = block && block.timestamp ? new Date(parseInt(block.timestamp, 16) * 1000).toISOString() : new Date().toISOString();
+    const block = await this.alchemyAdapter.getBlock(blockNumber || 'latest');
+    const blocktime = block ? new Date(block.timestamp * 1000).toISOString() : new Date().toISOString();
     const blockTimeDate = new Date(blocktime);
 
     for (let i = 0; i < tokensToFetch.length; i++) {
       const token = tokensToFetch[i]!;
-      const result = batchResults[i]?.result;
+      const result = batchResults[i];
       const balanceValue = BigInt(result === '0x' || !result ? '0' : result);
       const balanceFormatted = (Number(balanceValue) / Math.pow(10, token.decimals)).toString();
 
@@ -149,12 +150,12 @@ export class BalanceFetcherService {
     }
 
     for (const [chain, chainWallets] of Object.entries(chainToWallets)) {
-      this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+      this.alchemyAdapter.setChain(chain);
       const tokens = this.configService.getTokensForChain(chain);
       const blockNumber = options.chainBlockNumbers?.[chain] || options.blockNumber;
-      const blockTag = blockNumber ? `0x${blockNumber.toString(16)}` : 'latest';
 
-      const requests: { method: string, params: any[], meta: { wallet: string, token: any } }[] = [];
+      const batchRequests: BalanceBatchRequest[] = [];
+      const requestMeta: { wallet: string; token: any }[] = [];
 
       for (const wallet of chainWallets) {
         for (const token of tokens) {
@@ -165,43 +166,35 @@ export class BalanceFetcherService {
           }
 
           if (token.type === 'native') {
-            requests.push({
-              method: 'eth_getBalance',
-              params: [wallet.address, blockTag],
-              meta: { wallet: wallet.address, token }
-            });
+            batchRequests.push({ type: 'native', walletAddress: wallet.address });
           } else {
             const contractAddress = token.chains[chain.toLowerCase()]?.address;
             if (contractAddress) {
-              const data = `0x70a08231000000000000000000000000${wallet.address.toLowerCase().replace('0x', '')}`;
-              requests.push({
-                method: 'eth_call',
-                params: [{ to: contractAddress, data }, blockTag],
-                meta: { wallet: wallet.address, token }
-              });
+              batchRequests.push({ type: 'erc20', walletAddress: wallet.address, contractAddress });
             }
           }
+          requestMeta.push({ wallet: wallet.address, token });
         }
       }
 
-      if (requests.length === 0) continue;
+      if (batchRequests.length === 0) continue;
 
-      const batchResults = await this.alchemyAdapter.sendBatch(requests.map(r => ({ method: r.method, params: r.params })));
+      const batchResults = await this.alchemyAdapter.sendBalanceBatch(batchRequests, blockNumber || 'latest');
 
       // Resolve block timestamp
-      const block = await this.alchemyAdapter.getBlock(blockTag);
-      const blocktime = block && block.timestamp ? new Date(parseInt(block.timestamp, 16) * 1000).toISOString() : new Date().toISOString();
+      const block = await this.alchemyAdapter.getBlock(blockNumber || 'latest');
+      const blocktime = block ? new Date(block.timestamp * 1000).toISOString() : new Date().toISOString();
       const blockTimeDate = new Date(blocktime);
 
-      for (let j = 0; j < requests.length; j++) {
-        const req = requests[j]!;
-        const result = batchResults[j]?.result;
-        const token = req.meta.token;
+      for (let j = 0; j < batchRequests.length; j++) {
+        const meta = requestMeta[j]!;
+        const result = batchResults[j];
+        const token = meta.token;
         const balanceValue = BigInt(result === '0x' || !result ? '0' : result);
         const balanceFormatted = (Number(balanceValue) / Math.pow(10, token.decimals)).toString();
 
         const balance: UnifiedBalance = {
-          walletAddress: req.meta.wallet,
+          walletAddress: meta.wallet,
           chain,
           chainName: this.configService.getChainMetadata(chain)?.name,
           tokenId: token.id,

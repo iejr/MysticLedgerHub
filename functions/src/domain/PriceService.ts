@@ -11,8 +11,6 @@ export class PriceService {
   }
 
   async getPriceAtTime(symbol: string, targetTime: Date): Promise<number | undefined> {
-    const targetISO = targetTime.toISOString();
-
     // 1. Check Cache (Look for a range of +/- 10 min around the target time)
     const startTime = new Date(targetTime.getTime() - 10 * 60 * 1000).toISOString();
     const endTime = new Date(targetTime.getTime() + 10 * 60 * 1000).toISOString();
@@ -20,7 +18,7 @@ export class PriceService {
     let cachedPrices = await this.cacheService.getPricesInRange(symbol, startTime, endTime);
 
     if (cachedPrices.length === 0) {
-      // 2. Fetch from Alchemy if not in cache (fetch +/- 1 hour range to populate cache)
+      // 2. Fetch from provider if not in cache (fetch +/- 1 hour range to populate cache)
       const fetchStart = new Date(targetTime.getTime() - 60 * 60 * 1000).toISOString();
       const fetchEnd = new Date(targetTime.getTime() + 60 * 60 * 1000).toISOString();
 
@@ -28,15 +26,15 @@ export class PriceService {
         symbol,
         startTime: fetchStart,
         endTime: fetchEnd,
-        interval: '5m', // Use 5 min interval for accuracy
+        interval: '5m',
       });
 
       if (response) {
         // Save all fetched prices to cache
-        for (const p of response.data) {
+        for (const p of response.prices) {
           await this.cacheService.savePrice(response.symbol, p.timestamp, p.value);
         }
-        cachedPrices = response.data;
+        cachedPrices = response.prices;
       }
     }
 

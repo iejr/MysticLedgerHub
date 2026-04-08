@@ -1,7 +1,6 @@
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { CacheService } from './CacheService.js';
 import { ConfigService } from './ConfigService.js';
-import { AlchemyRequestConverter } from '../domain/RequestConverters.js';
 
 export class BlockService {
   private alchemyAdapter: AlchemyAdapter;
@@ -25,18 +24,19 @@ export class BlockService {
     if (cached) return cached;
 
     // 2. Initialize Bounds
-    this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
+    this.alchemyAdapter.setChain(chain);
     const latestBlock = await this.alchemyAdapter.getBlock('latest');
-    const latestNumber = parseInt(latestBlock.number, 16);
-    const latestTs = parseInt(latestBlock.timestamp, 16);
+    if (!latestBlock) throw new Error(`Failed to fetch latest block for ${chain}`);
+    const latestNumber = latestBlock.number;
+    const latestTs = latestBlock.timestamp;
 
     if (targetTs >= latestTs) return latestNumber;
 
     let low = chainMeta.startBlock;
     let high = latestNumber;
 
-    const lowBlock = await this.alchemyAdapter.getBlock(`0x${low.toString(16)}`);
-    let lowTs = parseInt(lowBlock.timestamp, 16);
+    const lowBlock = await this.alchemyAdapter.getBlock(low);
+    let lowTs = lowBlock!.timestamp;
     let highTs = latestTs;
 
     // 3. Linear Interpolation Search
@@ -50,8 +50,8 @@ export class BlockService {
       // Safety bounds
       mid = Math.max(low, Math.min(high, mid));
 
-      const midBlock = await this.alchemyAdapter.getBlock(`0x${mid.toString(16)}`);
-      const midTs = parseInt(midBlock.timestamp, 16);
+      const midBlock = await this.alchemyAdapter.getBlock(mid);
+      const midTs = midBlock!.timestamp;
 
       if (Math.abs(midTs - targetTs) < chainMeta.averageBlockTime) {
         // Close enough
@@ -81,15 +81,15 @@ export class BlockService {
     }
 
     // 2. Fetch from Provider
-    this.alchemyAdapter.setChain(AlchemyRequestConverter.getChainUrl(chain));
-    const block = await this.alchemyAdapter.getBlock(`0x${blockNumber.toString(16)}`);
-    if (!block || !block.timestamp) {
+    this.alchemyAdapter.setChain(chain);
+    const block = await this.alchemyAdapter.getBlock(blockNumber);
+    if (!block) {
       throw new Error(`Failed to fetch block ${blockNumber} for chain ${chain}`);
     }
 
-    const ts = parseInt(block.timestamp, 16);
+    const ts = block.timestamp;
 
-    // 3. Save to Cache (both ways if possible, but at least block -> ts)
+    // 3. Save to Cache
     await this.cacheService.saveBlockMapping(chain, ts, blockNumber);
 
     return new Date(ts * 1000).toISOString();
