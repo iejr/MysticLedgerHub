@@ -101,6 +101,18 @@ export class CacheService {
     await this.firestoreAdapter.savePrice(tokenId, timestamp, value);
   }
 
+  // --- Wallet Tokens ---
+
+  async saveWalletTokens(wallet: string, chain: string, tokens: { tokenId: string; firstSeen: string }[]): Promise<void> {
+    if (!this.writeEnabled) return;
+    await this.firestoreAdapter.saveWalletTokens(wallet, chain, tokens);
+  }
+
+  async getWalletTokens(wallet: string, chain: string): Promise<{ tokenId: string; firstSeen: string }[]> {
+    if (!this.readEnabled) return [];
+    return this.firestoreAdapter.getWalletTokens(wallet, chain);
+  }
+
   // --- Legacy per-wallet transactions ---
 
   async saveTransaction(walletAddress: string, txHash: string, data: any): Promise<void> {

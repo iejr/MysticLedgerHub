@@ -1,6 +1,6 @@
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { BalanceBatchRequest } from '../infra/types.js';
-import { ConfigService, WalletMetadata } from '../domain/ConfigService.js';
+import { ConfigService, WalletMetadata, TokenMetadata } from '../domain/ConfigService.js';
 import { UnifiedBalance } from '../domain/types.js';
 import { PriceService } from '../domain/PriceService.js';
 import { BlockService } from '../domain/BlockService.js';
@@ -73,13 +73,17 @@ export class BalanceFetcherService {
 
     for (const [chain, chainWallets] of Object.entries(chainToWallets)) {
       this.alchemyAdapter.setChain(chain);
-      const tokens = this.configService.getTokensForChain(chain);
       const blockNumber = chainBlockNumbers?.[chain] || options.blockNumber;
+      const fallbackTokens = this.configService.getTokensForChain(chain);
 
       const batchRequests: BalanceBatchRequest[] = [];
       const requestMeta: { wallet: string; token: any }[] = [];
 
       for (const wallet of chainWallets) {
+        // Determine which tokens to query for this wallet
+        const tokensForWallet = await this.resolveTokensForWallet(wallet.address, chain, requestedDate);
+        const tokens = tokensForWallet.length > 0 ? tokensForWallet : fallbackTokens;
+
         for (const token of tokens) {
           const cached = await this.cacheService.getBalance(wallet.address, chain, token.id, blockNumber);
           if (cached) {
@@ -149,5 +153,32 @@ export class BalanceFetcherService {
     }
 
     return allBalances;
+  }
+
+  /**
+   * Resolve which tokens to query for a wallet on a chain.
+   * Uses wallet_tokens cache (populated by transaction fetch) + native token.
+   * Filters by firstSeen <= requestedDate for historical snapshots.
+   * Returns empty array if no wallet_tokens exist (caller falls back to system allowlist).
+   */
+  private async resolveTokensForWallet(wallet: string, chain: string, requestedDate?: string): Promise<TokenMetadata[]> {
+    const walletTokens = await this.cacheService.getWalletTokens(wallet, chain);
+    if (walletTokens.length === 0) return [];
+
+    const tokens: TokenMetadata[] = [];
+
+    // Always include native token
+    const nativeToken = this.configService.getTokensForChain(chain).find(t => t.type === 'native');
+    if (nativeToken) tokens.push(nativeToken);
+
+    for (const wt of walletTokens) {
+      // Filter by firstSeen for historical queries
+      if (requestedDate && wt.firstSeen > requestedDate) continue;
+
+      const tokenEntry = this.configService.getTokenEntryById(wt.tokenId);
+      if (tokenEntry) tokens.push(tokenEntry);
+    }
+
+    return tokens;
   }
 }

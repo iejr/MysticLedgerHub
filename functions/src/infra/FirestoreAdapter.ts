@@ -10,6 +10,7 @@ export const Collections = {
   RAW_TRANSACTIONS: 'raw_transactions',
   CANONICAL_TRANSACTIONS: 'canonical_transactions',
   DISCOVERED_TOKEN_TRANSFERS: 'discovered_token_transfers',
+  WALLET_TOKENS: 'wallet_tokens',
 } as const;
 
 export class FirestoreAdapter {
@@ -187,5 +188,42 @@ export class FirestoreAdapter {
     const docId = `${chain.toLowerCase()}_${txHash.toLowerCase()}`;
     const doc = await this.db.collection(Collections.DISCOVERED_TOKEN_TRANSFERS).doc(docId).get();
     return doc.exists ? (doc.data()?.transfers as UnifiedTransaction['tokenTransfers']) : undefined;
+  }
+
+  // --- Wallet Tokens (which ERC-20s each wallet has interacted with per chain) ---
+
+  async saveWalletTokens(wallet: string, chain: string, tokens: { tokenId: string; firstSeen: string }[]): Promise<void> {
+    const docId = `${wallet.toLowerCase()}_${chain.toLowerCase()}`;
+    const doc = await this.db.collection(Collections.WALLET_TOKENS).doc(docId).get();
+
+    const existing: Record<string, string> = {}; // tokenId → firstSeen
+    if (doc.exists) {
+      const data = doc.data();
+      for (const t of (data?.tokens || [])) {
+        existing[t.tokenId] = t.firstSeen;
+      }
+    }
+
+    // Merge: keep min(firstSeen) for each tokenId
+    for (const t of tokens) {
+      if (!existing[t.tokenId] || t.firstSeen < existing[t.tokenId]) {
+        existing[t.tokenId] = t.firstSeen;
+      }
+    }
+
+    const merged = Object.entries(existing).map(([tokenId, firstSeen]) => ({ tokenId, firstSeen }));
+
+    await this.db.collection(Collections.WALLET_TOKENS).doc(docId).set({
+      wallet: wallet.toLowerCase(),
+      chain: chain.toLowerCase(),
+      tokens: merged,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async getWalletTokens(wallet: string, chain: string): Promise<{ tokenId: string; firstSeen: string }[]> {
+    const docId = `${wallet.toLowerCase()}_${chain.toLowerCase()}`;
+    const doc = await this.db.collection(Collections.WALLET_TOKENS).doc(docId).get();
+    return doc.exists ? (doc.data()?.tokens || []) : [];
   }
 }

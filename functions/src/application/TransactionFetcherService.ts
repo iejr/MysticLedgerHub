@@ -167,6 +167,8 @@ export class TransactionFetcherService {
       allResults.push(txs);
     });
 
+    await this.updateWalletTokens(allResults, walletSet);
+
     return allResults;
   }
 
@@ -210,6 +212,8 @@ export class TransactionFetcherService {
     txHashMap.forEach((txs) => {
       allResults.push(txs);
     });
+
+    await this.updateWalletTokens(allResults, walletSet);
 
     return allResults;
   }
@@ -279,16 +283,6 @@ export class TransactionFetcherService {
     logger.info(`Discovering asset transfers (${categories.join(",")}) for ${chain}...`);
     const discoveredHashes = new Set<string>();
 
-    const allowedTokens = this.configService ? this.configService.getTokensForChain(chain) : [];
-    const allowedTokenAddresses = new Set(
-      allowedTokens
-        .map((t) => {
-          const addr = t.chains[chain.toLowerCase()]?.address;
-          return addr ? addr.toLowerCase() : "";
-        })
-        .filter((a) => a !== "")
-    );
-
     for (const wallet of wallets) {
       const fromParams = {
         fromBlock,
@@ -312,10 +306,10 @@ export class TransactionFetcherService {
           const transfersByHash: Record<string, AssetTransfer[]> = {};
 
           for (const t of transfers) {
-            // Spam filtering for ERC20
+            // Spam filtering for ERC20: pass if token is in full database (system + uniswap)
             if (t.category === 'erc20') {
               const tokenAddr = t.contractAddress?.toLowerCase() || '';
-              if (!allowedTokenAddresses.has(tokenAddr)) continue;
+              if (this.configService && !this.configService.isKnownToken(chain, tokenAddr)) continue;
             }
 
             discoveredHashes.add(t.hash);
@@ -381,12 +375,9 @@ export class TransactionFetcherService {
 
           // Resolve symbols/decimals for decoded transfers that are still "UNKNOWN"
           if (this.configService) {
-            const chainTokens = this.configService.getTokensForChain(chain);
             for (const tt of parsedTransaction.tokenTransfers) {
               if (tt.tokenSymbol === "UNKNOWN" || !tt.tokenSymbol) {
-                const tokenConfig = chainTokens.find(
-                  (t) => t.chains[chain.toLowerCase()]?.address?.toLowerCase() === tt.tokenAddress.toLowerCase()
-                );
+                const tokenConfig = this.configService.getTokenEntryByAddress(chain, tt.tokenAddress);
                 const chainData = tokenConfig?.chains[chain.toLowerCase()];
                 if (tokenConfig && chainData) {
                   const finalDecimals = chainData.decimals !== undefined ? chainData.decimals : tokenConfig.decimals;
@@ -453,6 +444,40 @@ export class TransactionFetcherService {
     }
 
     await this.enrichTransactionWithUSD(parsedTransaction);
+  }
+
+  /**
+   * Extract per-wallet token interactions from enriched transactions and save to wallet_tokens cache.
+   * Accumulates tokenId + firstSeen (min blockTime) per (wallet, chain).
+   */
+  private async updateWalletTokens(transactions: UnifiedTransaction[], walletSet: Set<string>): Promise<void> {
+    // Collect: { walletKey → { tokenId → earliestBlockTime } }
+    const walletTokenMap = new Map<string, Map<string, string>>();
+
+    for (const tx of transactions) {
+      for (const tt of tx.tokenTransfers) {
+        if (!tt.tokenId) continue;
+
+        // Check both from and to — wallet might be on either side
+        const addresses = [tt.from, tt.to].filter(a => walletSet.has(a.toLowerCase()));
+        for (const addr of addresses) {
+          const key = `${addr.toLowerCase()}_${tx.chain}`;
+          if (!walletTokenMap.has(key)) walletTokenMap.set(key, new Map());
+          const tokenMap = walletTokenMap.get(key)!;
+          const existing = tokenMap.get(tt.tokenId);
+          if (!existing || tx.blockTime < existing) {
+            tokenMap.set(tt.tokenId, tx.blockTime);
+          }
+        }
+      }
+    }
+
+    // Save each (wallet, chain) entry
+    for (const [key, tokenMap] of walletTokenMap) {
+      const [wallet, chain] = key.split('_');
+      const tokens = Array.from(tokenMap.entries()).map(([tokenId, firstSeen]) => ({ tokenId, firstSeen }));
+      await this.cacheService.saveWalletTokens(wallet, chain, tokens);
+    }
   }
 
   private async enrichTransactionWithUSD(tx: UnifiedTransaction): Promise<void> {
