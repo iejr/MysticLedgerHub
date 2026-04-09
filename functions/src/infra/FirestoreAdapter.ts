@@ -79,6 +79,39 @@ export class FirestoreAdapter {
     return doc.data()?.timestamp;
   }
 
+  /**
+   * Find the nearest cached block bounds around a target timestamp.
+   * Returns the greatest cached entry ≤ target (lower) and smallest ≥ target (upper).
+   */
+  async getNearestBlockBounds(chain: string, targetTimestamp: number): Promise<{
+    lower?: { timestamp: number; blockNumber: number };
+    upper?: { timestamp: number; blockNumber: number };
+  }> {
+    const lowerChain = chain.toLowerCase();
+    const col = this.db.collection(Collections.BLOCK_MAPPINGS);
+
+    const [lowerSnap, upperSnap] = await Promise.all([
+      col.where('chain', '==', lowerChain)
+        .where('timestamp', '<=', targetTimestamp)
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get(),
+      col.where('chain', '==', lowerChain)
+        .where('timestamp', '>=', targetTimestamp)
+        .orderBy('timestamp', 'asc')
+        .limit(1)
+        .get(),
+    ]);
+
+    const lower = lowerSnap.docs[0]?.data();
+    const upper = upperSnap.docs[0]?.data();
+
+    return {
+      lower: lower ? { timestamp: lower.timestamp, blockNumber: lower.blockNumber } : undefined,
+      upper: upper ? { timestamp: upper.timestamp, blockNumber: upper.blockNumber } : undefined,
+    };
+  }
+
   // --- Balance Caching ---
 
   async saveBalance(balance: UnifiedBalance): Promise<void> {

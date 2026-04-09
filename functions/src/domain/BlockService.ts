@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { CacheService } from './CacheService.js';
 import { ConfigService } from './ConfigService.js';
@@ -22,39 +23,59 @@ export class BlockService {
 
     if (!chainMeta) throw new Error(`Chain metadata not found for ${chain}`);
 
-    // 1. Check Cache
+    // 1. Check exact cache hit
     const cached = await this.cacheService.getBlockMapping(chain, targetTs);
     if (cached) return cached;
 
-    // 2. Initialize Bounds
+    // 2. Initialize bounds from provider
     this.alchemyAdapter.setChain(chain);
     const latestBlock = await this.alchemyAdapter.getBlock('latest');
     if (!latestBlock) throw new Error(`Failed to fetch latest block for ${chain}`);
-    const latestNumber = latestBlock.number;
-    const latestTs = latestBlock.timestamp;
 
-    if (targetTs >= latestTs) return latestNumber;
+    if (targetTs >= latestBlock.timestamp) return latestBlock.number;
 
     let low = chainMeta.startBlock;
-    let high = latestNumber;
+    let high = latestBlock.number;
+    let lowTs = 0;
+    let highTs = latestBlock.timestamp;
 
-    const lowBlock = await this.alchemyAdapter.getBlock(low);
-    let lowTs = lowBlock!.timestamp;
-    let highTs = latestTs;
+    // 3. Narrow bounds from cached block mappings
+    const bounds = await this.cacheService.getNearestBlockBounds(chain, targetTs);
+    let boundsNarrowed = false;
 
-    // Determine search strategy: config says non-linear → binary from the start
+    if (bounds.lower) {
+      low = bounds.lower.blockNumber;
+      lowTs = bounds.lower.timestamp;
+      boundsNarrowed = true;
+    }
+    if (bounds.upper) {
+      high = bounds.upper.blockNumber;
+      highTs = bounds.upper.timestamp;
+      boundsNarrowed = true;
+    }
+
+    // Only fetch the low block from provider if cache didn't help
+    if (!boundsNarrowed) {
+      const lowBlock = await this.alchemyAdapter.getBlock(low);
+      lowTs = lowBlock!.timestamp;
+    }
+
+    if (boundsNarrowed) {
+      logger.info(`Narrowed search bounds for ${chain} from cache: [${low}, ${high}] (range: ${high - low} blocks)`);
+    }
+
+    // 4. Determine search strategy
     let useBinarySearch = !chainMeta.linearBlockTime;
 
-    // 3. Search loop
+    // 5. Search loop
     let iterations = 0;
-    while (low <= high && iterations < 20) {
+    while (low <= high && iterations < 30) {
       iterations++;
 
       let mid: number;
       if (useBinarySearch) {
         mid = Math.floor((low + high) / 2);
       } else {
-        // Linear interpolation
         mid = low + Math.floor(((targetTs - lowTs) / (highTs - lowTs)) * (high - low));
         mid = Math.max(low, Math.min(high, mid));
       }
@@ -84,7 +105,7 @@ export class BlockService {
       }
     }
 
-    // Fallback to high if search doesn't perfectly converge
+    // Fallback to high if search doesn't converge
     await this.cacheService.saveBlockMapping(chain, targetTs, high);
     return high;
   }

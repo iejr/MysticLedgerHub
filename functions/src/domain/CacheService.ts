@@ -69,6 +69,14 @@ export class CacheService {
     await this.firestoreAdapter.saveBlockMapping(chain, timestamp, blockNumber);
   }
 
+  async getNearestBlockBounds(chain: string, targetTimestamp: number): Promise<{
+    lower?: { timestamp: number; blockNumber: number };
+    upper?: { timestamp: number; blockNumber: number };
+  }> {
+    if (!this.readEnabled) return {};
+    return this.firestoreAdapter.getNearestBlockBounds(chain, targetTimestamp);
+  }
+
   // --- Balances ---
 
   async getBalance(walletAddress: string, chain: string, tokenId: string, blockNumber?: number): Promise<UnifiedBalance | undefined> {
