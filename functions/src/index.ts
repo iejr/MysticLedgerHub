@@ -76,110 +76,8 @@ export const fetchTransactions = functions
 });
 
 export const fetchBalances = functions.https.onRequest(async (req, res) => {
-  const { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache, dryRun } = req.query;
-  functions.logger.info('fetchBalances requested', { walletAddress, chain, blockNumber, includeUsd, exportCsv, useCache, dryRun });
-
-  if (!walletAddress || !chain) {
-    res.status(400).send('Missing walletAddress or chain');
-    return;
-  }
-
-  try {
-    const alchemyAdapter = new AlchemyAdapter({
-      apiKey: process.env.ALCHEMY_API_KEY || '',
-      baseUrl: '',
-      throttler: alchemyThrottler,
-    });
-
-    const firestoreAdapter = new FirestoreAdapter(db);
-    const cacheService = new CacheService(firestoreAdapter, {
-      useCache: useCache !== 'false',
-      dryRun: dryRun === 'true',
-    });
-    const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, cacheService);
-
-    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, cacheService);
-
-    const balances = await service.fetchBalances({
-      walletAddress: walletAddress as string,
-      chain: chain as string,
-      blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
-      includeUsd: includeUsd === 'true',
-    });
-
-    if (exportCsv === 'true') {
-      const csvService = new CsvService(configService);
-      const csv = csvService.generateBalanceCsv(balances);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=balances_${walletAddress}_${chain}.csv`);
-      res.status(200).send(csv);
-    } else {
-      res.status(200).json({
-        count: balances.length,
-        balances,
-      });
-    }
-  } catch (error: any) {
-    console.error('Error fetching balances:', error);
-    res.status(500).send(error.message);
-  }
-});
-
-export const fetchMultiBalances = functions.https.onRequest(async (req, res) => {
-  const { addresses, blockNumber, chainBlockNumbers, includeUsd, exportCsv, useCache, dryRun } = req.body;
-  functions.logger.info('fetchMultiBalances requested', { addresses, blockNumber, includeUsd, exportCsv, useCache, dryRun });
-
-  try {
-    const alchemyAdapter = new AlchemyAdapter({
-      apiKey: process.env.ALCHEMY_API_KEY || '',
-      baseUrl: '',
-      throttler: alchemyThrottler,
-    });
-
-    const firestoreAdapter = new FirestoreAdapter(db);
-    const cacheService = new CacheService(firestoreAdapter, {
-      useCache: useCache !== false,
-      dryRun: dryRun === true || dryRun === 'true',
-    });
-    const configService = new ConfigService();
-    const priceService = new PriceService(alchemyAdapter, cacheService);
-
-    const service = new BalanceFetcherService(alchemyAdapter, configService, priceService, cacheService);
-
-    const options: any = {
-      blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
-      chainBlockNumbers: chainBlockNumbers,
-      includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
-    };
-
-    if (addresses && Array.isArray(addresses)) {
-      options.wallets = addresses.map(addr => ({ address: addr, label: 'Custom' }));
-    }
-
-    const balances = await service.fetchMultiWalletBalances(options);
-
-    if (exportCsv === true || exportCsv === 'true') {
-      const csvService = new CsvService(configService);
-      const csv = csvService.generateBalanceCsv(balances);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=multi_balances.csv`);
-      res.status(200).send(csv);
-    } else {
-      res.status(200).json({
-        count: balances.length,
-        balances,
-      });
-    }
-  } catch (error: any) {
-    console.error('Error fetching multi balances:', error);
-    res.status(500).send(error.message);
-  }
-});
-
-export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (req, res) => {
-  const { addresses, timestamp, includeUsd, exportCsv, useCache, dryRun } = req.body;
-  functions.logger.info('fetchMultiBalancesByTimestamp requested', { addresses, timestamp, includeUsd, exportCsv, useCache, dryRun });
+  const { addresses, timestamp, blockNumber, chainBlockNumbers, includeUsd, exportCsv, useCache, dryRun } = req.body;
+  functions.logger.info('fetchBalances requested', { addresses, timestamp, blockNumber, includeUsd, exportCsv, useCache, dryRun });
 
   try {
     const alchemyAdapter = new AlchemyAdapter({
@@ -210,6 +108,8 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
 
     const options: any = {
       timestamp: targetDate,
+      blockNumber: blockNumber ? parseInt(blockNumber as string) : undefined,
+      chainBlockNumbers,
       includeUsd: includeUsd !== undefined ? includeUsd === true || includeUsd === 'true' : undefined,
     };
 
@@ -217,15 +117,13 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
       options.wallets = addresses.map(addr => ({ address: addr, label: 'Custom' }));
     }
 
-    const balances = targetDate
-      ? await service.fetchMultiWalletBalancesByTimestamp(options)
-      : await service.fetchMultiWalletBalances(options);
+    const balances = await service.fetchBalances(options);
 
     if (exportCsv === true || exportCsv === 'true') {
       const csvService = new CsvService(configService);
       const csv = csvService.generateBalanceCsv(balances);
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=multi_balances_ts.csv`);
+      res.setHeader('Content-Disposition', 'attachment; filename=balances.csv');
       res.status(200).send(csv);
     } else {
       res.status(200).json({
@@ -234,7 +132,7 @@ export const fetchMultiBalancesByTimestamp = functions.https.onRequest(async (re
       });
     }
   } catch (error: any) {
-    console.error('Error fetching balances by timestamp:', error);
+    console.error('Error fetching balances:', error);
     res.status(500).send(error.message);
   }
 });
