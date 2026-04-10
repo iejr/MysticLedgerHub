@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { HistoricalPriceParams } from '../infra/types.js';
 import { CacheService } from './CacheService.js';
@@ -21,13 +22,15 @@ export class PriceService {
   }
 
   async getPriceAtTime(tokenId: string, options: PriceLookupOptions, targetTime: Date): Promise<number | undefined> {
-    // 1. Check Cache (Look for a range of +/- 10 min around the target time)
+    // Cache lookup range ±10min is tight enough for accuracy.
+    // Fetch range ±1hr populates cache broadly to reduce future misses.
     const startTime = new Date(targetTime.getTime() - 10 * 60 * 1000).toISOString();
     const endTime = new Date(targetTime.getTime() + 10 * 60 * 1000).toISOString();
 
     let cachedPrices = await this.cacheService.getPricesInRange(tokenId, startTime, endTime);
 
     if (cachedPrices.length === 0) {
+      logger.info(`getPriceAtTime: cache miss for ${tokenId} at ${targetTime.toISOString()}, fetching from provider`);
       // 2. Fetch from provider if not in cache (fetch +/- 1 hour range to populate cache)
       const fetchStart = new Date(targetTime.getTime() - 60 * 60 * 1000).toISOString();
       const fetchEnd = new Date(targetTime.getTime() + 60 * 60 * 1000).toISOString();
@@ -49,11 +52,14 @@ export class PriceService {
       const response = await this.alchemyAdapter.fetchHistoricalPrices(priceParams);
 
       if (response && response.prices) {
+        logger.info(`getPriceAtTime: fetched ${response.prices.length} price points for ${tokenId}`);
         for (const p of response.prices) {
           await this.cacheService.savePrice(tokenId, p.timestamp, p.value);
         }
         cachedPrices = response.prices;
       }
+    } else {
+      logger.info(`getPriceAtTime: cache hit for ${tokenId}, ${cachedPrices.length} prices in range`);
     }
 
     if (cachedPrices.length > 0) {
@@ -69,6 +75,7 @@ export class PriceService {
           closestPrice = p;
         }
       }
+      logger.info(`getPriceAtTime: closest price for ${tokenId} is ${closestPrice.value} (time diff: ${Math.round(minDiff / 1000)}s)`);
       return parseFloat(closestPrice.value);
     }
 

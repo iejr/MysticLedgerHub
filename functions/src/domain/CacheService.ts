@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { FirestoreAdapter } from '../infra/FirestoreAdapter.js';
 import { UnifiedBalance, UnifiedTransaction } from './types.js';
 
@@ -19,6 +20,7 @@ export class CacheService {
     const dryRun = options.dryRun ?? false;
     this.readEnabled = useCache && !dryRun;
     this.writeEnabled = !dryRun;
+    logger.info(`CacheService initialized: readEnabled=${this.readEnabled}, writeEnabled=${this.writeEnabled}`);
   }
 
   // --- Canonical Transactions ---

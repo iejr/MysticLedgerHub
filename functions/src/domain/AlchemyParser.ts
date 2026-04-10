@@ -8,6 +8,9 @@ import {
   RawTransaction,
 } from "./types.js";
 
+// ERC-20 function selectors:
+// 0xa9059cbb = transfer(address,uint256)
+// 0x23b872dd = transferFrom(address,address,uint256)
 const ERC20_INTERFACE = new Interface([
   "function transfer(address to, uint256 value)",
   "function transferFrom(address from, address to, uint256 value)"
@@ -59,6 +62,7 @@ export class AlchemyParser implements TransactionParser {
   distillTrace(traces: any[], chain: string): { unified: UnifiedTransaction; raw: RawTransaction } | undefined {
     if (!traces || traces.length === 0) return undefined;
 
+    // The root trace (traceAddress.length === 0) represents the top-level transaction call
     const mainTrace = traces.find((t: any) => t.traceAddress.length === 0) || traces[0];
     const txHash = mainTrace.transactionHash;
     const blockNumber = mainTrace.blockNumber;
@@ -69,7 +73,7 @@ export class AlchemyParser implements TransactionParser {
 
     // 1. Extract Native Transfers and Token Transfers from traces
     for (const t of traces) {
-      // Filter out delegate call
+      // Skip delegatecall — it executes code in caller's context, not a real fund movement
       if (t.action?.callType === 'delegatecall') {
         continue;
       }
@@ -98,7 +102,8 @@ export class AlchemyParser implements TransactionParser {
             tokenDecimals: 18, // Default, will be resolved later
           });
         } catch (e) {
-          // Ignore decoding errors
+          // Decoding may fail for non-standard token contracts — skip gracefully,
+          // these will show as UNKNOWN
         }
       } else if (t.action?.input && t.action.input.startsWith("0x23b872dd")) {
         try {
@@ -113,7 +118,8 @@ export class AlchemyParser implements TransactionParser {
             tokenDecimals: 18,
           });
         } catch (e) {
-          // Ignore decoding errors
+          // Decoding may fail for non-standard token contracts — skip gracefully,
+          // these will show as UNKNOWN
         }
       }
     }

@@ -3,7 +3,10 @@ import { AlchemyAdapter } from '../infra/AlchemyAdapter.js';
 import { CacheService } from './CacheService.js';
 import { ConfigService } from './ConfigService.js';
 
-/** Threshold multiplier: if interpolation error exceeds this × averageBlockTime, switch to binary */
+/**
+ * Threshold multiplier: if the first interpolation probe misses by more than 10× the average
+ * block time, the chain likely has non-uniform block times — switch to binary search.
+ */
 const INTERPOLATION_ERROR_THRESHOLD = 10;
 
 export class BlockService {
@@ -25,7 +28,10 @@ export class BlockService {
 
     // 1. Check exact cache hit
     const cached = await this.cacheService.getBlockMapping(chain, targetTs);
-    if (cached) return cached;
+    if (cached) {
+      logger.info(`findBlockByTimestamp: cache hit for ${chain} ts=${targetTs}, block=${cached}`);
+      return cached;
+    }
 
     // 2. Initialize bounds from provider
     this.alchemyAdapter.setChain(chain);
@@ -76,6 +82,8 @@ export class BlockService {
       if (useBinarySearch) {
         mid = Math.floor((low + high) / 2);
       } else {
+        // Linear interpolation assumes uniform block times — estimates block position
+        // proportional to timestamp position within the bounds.
         mid = low + Math.floor(((targetTs - lowTs) / (highTs - lowTs)) * (high - low));
         mid = Math.max(low, Math.min(high, mid));
       }
@@ -87,11 +95,15 @@ export class BlockService {
       if (!useBinarySearch && iterations === 1) {
         const errorSeconds = Math.abs(midTs - targetTs);
         if (errorSeconds > INTERPOLATION_ERROR_THRESHOLD * chainMeta.averageBlockTime) {
+          logger.info(`findBlockByTimestamp: interpolation error ${errorSeconds}s exceeds threshold for ${chain}, switching to binary search`);
           useBinarySearch = true;
         }
       }
 
+      // Close enough: within one average block time of target
       if (Math.abs(midTs - targetTs) < chainMeta.averageBlockTime) {
+        const strategy = useBinarySearch ? 'binary' : 'interpolation';
+        logger.info(`findBlockByTimestamp: converged for ${chain} in ${iterations} iterations (${strategy}), block=${mid}`);
         await this.cacheService.saveBlockMapping(chain, targetTs, mid);
         return mid;
       }
@@ -106,6 +118,8 @@ export class BlockService {
     }
 
     // Fallback to high if search doesn't converge
+    const strategy = useBinarySearch ? 'binary' : 'interpolation';
+    logger.warn(`findBlockByTimestamp: did not converge for ${chain} after ${iterations} iterations (${strategy}), falling back to block=${high}`);
     await this.cacheService.saveBlockMapping(chain, targetTs, high);
     return high;
   }
@@ -114,6 +128,7 @@ export class BlockService {
     // 1. Check Cache
     const cachedTs = await this.cacheService.getTimestampByBlockNumber(chain, blockNumber);
     if (cachedTs) {
+      logger.info(`getBlockTime: cache hit for ${chain} block=${blockNumber}`);
       return new Date(cachedTs * 1000).toISOString();
     }
 

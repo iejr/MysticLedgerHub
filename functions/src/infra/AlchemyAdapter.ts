@@ -15,7 +15,8 @@ import {
   HistoricalPriceResult,
 } from './types.js';
 
-// Internal chain ID → Alchemy URL slug mapping
+// Maps our internal chain IDs to Alchemy-specific URL slugs.
+// Chains not listed here fall back to `{chain}-mainnet`.
 const CHAIN_SLUGS: Record<string, string> = {
   'ethereum': 'eth-mainnet',
   'base': 'base-mainnet',
@@ -24,6 +25,7 @@ const CHAIN_SLUGS: Record<string, string> = {
   'optimism': 'opt-mainnet',
 };
 
+/** Convert decimal block number to hex string for Alchemy JSON-RPC. */
 function toHexBlock(block?: number | 'latest'): string {
   if (block === undefined || block === 'latest') return 'latest';
   return `0x${block.toString(16)}`;
@@ -41,21 +43,25 @@ export class AlchemyAdapter extends BaseAdapter {
     this.apiKey = config.apiKey;
   }
 
-  // Resolve internal chain ID to Alchemy network slug
+  /** Resolve internal chain ID to Alchemy network slug (e.g. "ethereum" → "eth-mainnet") */
   static getNetworkSlug(chain: string): string {
     return CHAIN_SLUGS[chain.toLowerCase()] || `${chain.toLowerCase()}-mainnet`;
   }
 
-  // Accepts internal chain ID (e.g. "ethereum", "base")
+  /** Set the target chain for subsequent API calls. Accepts internal chain ID. */
   setChain(chain: string) {
     const slug = CHAIN_SLUGS[chain.toLowerCase()] || `${chain.toLowerCase()}-mainnet`;
     this.client.defaults.baseURL = `https://${slug}.g.alchemy.com/v2/${this.apiKey}`;
   }
 
-  // JSON-RPC Batching — returns unwrapped .result from each response
+  /**
+   * Send a batch of JSON-RPC requests with automatic chunking.
+   * Returns unwrapped `.result` from each response, preserving order.
+   */
   async sendBatch(requests: { method: string, params: any[] }[]): Promise<any[]> {
     const allResults: any[] = new Array(requests.length);
-    logger.info(`Sending batch of ${requests.length} requests in chunks of ${this.CHUNK_SIZE}...`);
+    const totalChunks = Math.ceil(requests.length / this.CHUNK_SIZE);
+    logger.info(`sendBatch: ${requests.length} requests in ${totalChunks} chunk(s)`);
 
     for (let i = 0; i < requests.length; i += this.CHUNK_SIZE) {
       const chunk = requests.slice(i, i + this.CHUNK_SIZE);
@@ -79,17 +85,23 @@ export class AlchemyAdapter extends BaseAdapter {
       });
     }
 
+    logger.info(`sendBatch: completed ${requests.length} requests`);
     return allResults;
   }
 
-  // Batch balance requests — callers provide domain-level requests, adapter handles calldata encoding
+  /**
+   * Batch balance requests using domain-level types.
+   * Encodes ERC-20 balanceOf(address) calldata (selector 0x70a08231) internally.
+   */
   async sendBalanceBatch(requests: BalanceBatchRequest[], blockNumber: number | 'latest' = 'latest'): Promise<string[]> {
+    logger.info(`sendBalanceBatch: ${requests.length} balance requests at block ${blockNumber}`);
     const blockTag = toHexBlock(blockNumber);
 
     const rpcRequests = requests.map(req => {
       if (req.type === 'native') {
         return { method: 'eth_getBalance', params: [req.walletAddress, blockTag] };
       } else {
+        // ERC-20 balanceOf(address): selector 0x70a08231 + ABI-encoded address
         const data = `0x70a08231000000000000000000000000${req.walletAddress.toLowerCase().replace('0x', '')}`;
         return { method: 'eth_call', params: [{ to: req.contractAddress, data }, blockTag] };
       }
@@ -98,14 +110,14 @@ export class AlchemyAdapter extends BaseAdapter {
     return this.sendBatch(rpcRequests);
   }
 
-  // Required by BaseAdapter abstract contract
+  /** Required by BaseAdapter abstract contract */
   async fetchTransactions(params: AssetTransferParams): Promise<any> {
     const iterator = this.getAssetTransferIterator(params);
     const first = await iterator.next();
     return first.value || [];
   }
 
-  // Trace filter — accepts decimal block numbers, returns unwrapped trace array
+  /** Trace filter — accepts decimal block numbers, returns unwrapped trace array */
   async fetchTraceFilterTransactions(params: TraceFilterParams): Promise<{ transactionHash: string }[]> {
     const alchemyParams: AlchemyTraceFilterParams = {
       fromAddress: params.fromAddress,
@@ -114,7 +126,7 @@ export class AlchemyAdapter extends BaseAdapter {
       toBlock: params.toBlock !== undefined ? toHexBlock(params.toBlock) : undefined,
     };
 
-    logger.info(`Fetching trace filter for: ${params.fromAddress || params.toAddress}`);
+    logger.info(`fetchTraceFilter: ${params.fromAddress || params.toAddress}`);
     const response: any = await this.fetchWithRetry({
       method: 'POST',
       url: '',
@@ -126,10 +138,12 @@ export class AlchemyAdapter extends BaseAdapter {
       },
     });
 
-    return response.result || [];
+    const traces = response.result || [];
+    logger.info(`fetchTraceFilter: returned ${traces.length} traces`);
+    return traces;
   }
 
-  // Trace a single transaction
+  /** Trace a single transaction — returns raw trace array */
   async fetchTraceTransaction(txHash: string): Promise<any> {
     const response: any = await this.fetchWithRetry({
       method: 'POST',
@@ -144,9 +158,14 @@ export class AlchemyAdapter extends BaseAdapter {
     return response.result;
   }
 
-  // Asset transfer iterator — accepts domain params, yields decoded AssetTransfer[]
+  /**
+   * Paginated asset transfer iterator.
+   * Accepts domain params (decimal block numbers), yields decoded AssetTransfer[] per page.
+   * Handles Alchemy pagination internally via pageKey.
+   */
   async *getAssetTransferIterator(params: AssetTransferParams): AsyncGenerator<AssetTransfer[]> {
     let pageKey: string | undefined;
+    let pageCount = 0;
     const alchemyParams: AlchemyGetAssetTransferParams = {
       fromBlock: params.fromBlock !== undefined ? toHexBlock(params.fromBlock) : undefined,
       toBlock: params.toBlock !== undefined ? toHexBlock(params.toBlock) : undefined,
@@ -159,6 +178,7 @@ export class AlchemyAdapter extends BaseAdapter {
     };
 
     do {
+      pageCount++;
       const response: any = await this.fetchWithRetry({
         method: 'POST',
         url: '',
@@ -186,9 +206,11 @@ export class AlchemyAdapter extends BaseAdapter {
       yield decoded;
       pageKey = response.result.pageKey;
     } while (pageKey);
+
+    logger.info(`getAssetTransferIterator: completed ${pageCount} page(s) for ${params.fromAddress || params.toAddress}`);
   }
 
-  // Block info — accepts decimal block number, returns decoded block
+  /** Block info — accepts decimal block number, returns decoded block */
   async getBlock(blockNumber: number | 'latest'): Promise<DecodedBlock | null> {
     const blockTag = toHexBlock(blockNumber);
     const response: any = await this.fetchWithRetry({
@@ -211,7 +233,7 @@ export class AlchemyAdapter extends BaseAdapter {
     };
   }
 
-  // Native balance — accepts decimal block number
+  /** Native balance — accepts decimal block number */
   async getNativeBalance(address: string, blockNumber: number | 'latest' = 'latest'): Promise<string> {
     const blockTag = toHexBlock(blockNumber);
     const response: any = await this.fetchWithRetry({
@@ -227,7 +249,7 @@ export class AlchemyAdapter extends BaseAdapter {
     return response.result;
   }
 
-  // ERC-20 balance — accepts decimal block number
+  /** ERC-20 balance — accepts decimal block number, encodes balanceOf calldata internally */
   async getTokenBalance(contractAddress: string, walletAddress: string, blockNumber: number | 'latest' = 'latest'): Promise<string> {
     const blockTag = toHexBlock(blockNumber);
     const data = `0x70a08231000000000000000000000000${walletAddress.toLowerCase().replace('0x', '')}`;
@@ -245,7 +267,10 @@ export class AlchemyAdapter extends BaseAdapter {
     return response.result;
   }
 
-  // Historical token prices — supports address+network (ERC-20) or symbol (native) queries
+  /**
+   * Historical token prices.
+   * Uses address+network when available (more precise for ERC-20), falls back to symbol (native tokens).
+   */
   async fetchHistoricalPrices(params: HistoricalPriceParams): Promise<HistoricalPriceResult> {
     const { symbol, address, network, startTime, endTime, interval } = params;
 
@@ -269,7 +294,7 @@ export class AlchemyAdapter extends BaseAdapter {
     };
   }
 
-  // Current token prices
+  /** Current token prices */
   async getTokenPrices(params: AlchemyTokenPriceParams): Promise<AlchemyTokenPriceResponse> {
     return this.fetchWithRetry({
       method: 'POST',

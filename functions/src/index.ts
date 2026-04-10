@@ -17,8 +17,10 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // Throttlers for different providers
-const moralisThrottler = new Throttler({ concurrency: 1, interval: 1000, intervalCap: 1 }); // 1 QPS
-const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, intervalCap: 50 }); // Adjusted for Alchemy
+// Moralis free tier: 1 QPS.
+const moralisThrottler = new Throttler({ concurrency: 1, interval: 1000, intervalCap: 1 });
+// Alchemy Growth tier: ~50 QPS.
+const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, intervalCap: 50 });
 
 export const fetchTransactions = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
@@ -70,7 +72,7 @@ export const fetchTransactions = functions
       });
     }
   } catch (error: any) {
-    console.error('Error fetching transactions:', error);
+    functions.logger.error('Error fetching transactions:', error);
     res.status(500).send(error.message);
   }
 });
@@ -132,7 +134,7 @@ export const fetchBalances = functions.https.onRequest(async (req, res) => {
       });
     }
   } catch (error: any) {
-    console.error('Error fetching balances:', error);
+    functions.logger.error('Error fetching balances:', error);
     res.status(500).send(error.message);
   }
 });
@@ -196,7 +198,7 @@ export const fetchMultiTransactions = functions
       });
     }
   } catch (error: any) {
-    console.error('Error fetching multi transactions:', error);
+    functions.logger.error('Error fetching multi transactions:', error);
     res.status(500).send(error.message);
   }
 });

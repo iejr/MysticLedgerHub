@@ -5,6 +5,7 @@ import { UnifiedBalance } from '../domain/types.js';
 import { PriceService } from '../domain/PriceService.js';
 import { BlockService } from '../domain/BlockService.js';
 import { CacheService } from '../domain/CacheService.js';
+import { logger } from 'firebase-functions';
 
 export interface BalanceFetchOptions {
   wallets?: WalletMetadata[];
@@ -40,6 +41,12 @@ export class BalanceFetcherService {
     const wallets = options.wallets || this.configService.getWallets();
     const globalIncludeUsd = options.includeUsd !== undefined ? options.includeUsd : this.configService.getGlobalIncludeUsd();
 
+    logger.info(`fetchBalances: starting for ${wallets.length} wallets`, {
+      timestamp: options.timestamp?.toISOString(),
+      blockNumber: options.blockNumber,
+      includeUsd: globalIncludeUsd,
+    });
+
     // Resolve timestamp → per-chain block numbers if needed
     let chainBlockNumbers = options.chainBlockNumbers;
     let requestedDate = options.requestedDate;
@@ -71,6 +78,8 @@ export class BalanceFetcherService {
       }
     }
 
+    logger.info(`fetchBalances: querying ${Object.keys(chainToWallets).length} chains`, { chains: Object.keys(chainToWallets) });
+
     for (const [chain, chainWallets] of Object.entries(chainToWallets)) {
       this.alchemyAdapter.setChain(chain);
       const blockNumber = chainBlockNumbers?.[chain] || options.blockNumber;
@@ -78,6 +87,7 @@ export class BalanceFetcherService {
 
       const batchRequests: BalanceBatchRequest[] = [];
       const requestMeta: { wallet: string; token: any }[] = [];
+      let cacheHits = 0;
 
       for (const wallet of chainWallets) {
         // Determine which tokens to query for this wallet
@@ -88,6 +98,7 @@ export class BalanceFetcherService {
           const cached = await this.cacheService.getBalance(wallet.address, chain, token.id, blockNumber);
           if (cached) {
             allBalances.push({ ...cached, requestedDate });
+            cacheHits++;
             continue;
           }
 
@@ -103,6 +114,7 @@ export class BalanceFetcherService {
         }
       }
 
+      logger.info(`fetchBalances: chain=${chain} cacheHits=${cacheHits} toFetch=${batchRequests.length}`);
       if (batchRequests.length === 0) continue;
 
       const batchResults = await this.alchemyAdapter.sendBalanceBatch(batchRequests, blockNumber || 'latest');
@@ -152,18 +164,22 @@ export class BalanceFetcherService {
       }
     }
 
+    logger.info(`fetchBalances: completed with ${allBalances.length} total balances`);
     return allBalances;
   }
 
   /**
-   * Resolve which tokens to query for a wallet on a chain.
-   * Uses wallet_tokens cache (populated by transaction fetch) + native token.
-   * Filters by firstSeen <= requestedDate for historical snapshots.
+   * Derive tokens from transaction history. For historical queries, only include
+   * tokens with firstSeen <= requested date to avoid querying tokens the wallet
+   * hadn't interacted with yet.
    * Returns empty array if no wallet_tokens exist (caller falls back to system allowlist).
    */
   private async resolveTokensForWallet(wallet: string, chain: string, requestedDate?: string): Promise<TokenMetadata[]> {
     const walletTokens = await this.cacheService.getWalletTokens(wallet, chain);
-    if (walletTokens.length === 0) return [];
+    if (walletTokens.length === 0) {
+      logger.info(`resolveTokensForWallet: wallet=${wallet} chain=${chain} no wallet_tokens found, falling back to system allowlist`);
+      return [];
+    }
 
     const tokens: TokenMetadata[] = [];
 
@@ -179,6 +195,7 @@ export class BalanceFetcherService {
       if (tokenEntry) tokens.push(tokenEntry);
     }
 
+    logger.info(`resolveTokensForWallet: wallet=${wallet} chain=${chain} using wallet_tokens, tokenCount=${tokens.length}`, { requestedDate });
     return tokens;
   }
 }

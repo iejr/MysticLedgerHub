@@ -63,6 +63,8 @@ export class TransactionFetcherService {
       throw new Error("walletAddress and chain are required for fetchAndCache");
     }
 
+    logger.info(`fetchAndCache: starting for wallet=${walletAddress} chain=${chain}`, { fromBlock: options.fromBlock, toBlock: options.toBlock });
+
     const allTransactions: UnifiedTransaction[] = [];
 
     this.alchemyAdapter.setChain(chain);
@@ -87,6 +89,7 @@ export class TransactionFetcherService {
       }
     }
 
+    logger.info(`fetchAndCache: completed for wallet=${walletAddress} chain=${chain}, txCount=${allTransactions.length}`);
     return allTransactions;
   }
 
@@ -306,7 +309,8 @@ export class TransactionFetcherService {
           const transfersByHash: Record<string, AssetTransfer[]> = {};
 
           for (const t of transfers) {
-            // Spam filtering for ERC20: pass if token is in full database (system + uniswap)
+            // Only ERC-20 tokens recognized by the full token database (system + uniswap) pass.
+            // Unknown tokens are filtered to prevent dust/spam token noise.
             if (t.category === 'erc20') {
               const tokenAddr = t.contractAddress?.toLowerCase() || '';
               if (this.configService && !this.configService.isKnownToken(chain, tokenAddr)) continue;
@@ -333,6 +337,7 @@ export class TransactionFetcherService {
           }
         }
       }
+      logger.info(`discoverAssetTransfers: wallet=${wallet.address} discovered ${discoveredHashes.size} hashes so far on ${chain}`);
     }
     return discoveredHashes;
   }
@@ -353,6 +358,9 @@ export class TransactionFetcherService {
       }
       txHashesToFetch.push(hash);
     }
+
+    const cacheHits = discoveredTxHashes.size - txHashesToFetch.length;
+    logger.info(`fetchAndEnrichTraceTransactions: chain=${chain} total=${discoveredTxHashes.size} cacheHits=${cacheHits} toFetch=${txHashesToFetch.length}`);
 
     if (txHashesToFetch.length > 0) {
       logger.info(`Fetching ${txHashesToFetch.length} trace_transaction results for ${chain}...`);
@@ -420,6 +428,8 @@ export class TransactionFetcherService {
           txHashMap.set(`${chain}_${txHash}`, parsedTransaction);
         }
       }
+
+      logger.info(`fetchAndEnrichTraceTransactions: chain=${chain} completed, enriched ${txHashMap.size} transactions`);
     }
   }
 
@@ -428,7 +438,7 @@ export class TransactionFetcherService {
       try {
         parsedTransaction.blockTime = await this.blockService.getBlockTime(chain, parsedTransaction.blockNumber);
       } catch (e) {
-        console.warn(`Failed to fetch block timestamp for hash ${txHash}`, e);
+        logger.warn(`Failed to fetch block timestamp for hash ${txHash}`, e);
       }
     }
 
@@ -447,8 +457,9 @@ export class TransactionFetcherService {
   }
 
   /**
-   * Extract per-wallet token interactions from enriched transactions and save to wallet_tokens cache.
-   * Accumulates tokenId + firstSeen (min blockTime) per (wallet, chain).
+   * Extract per-wallet token interactions from enriched transactions.
+   * Uses min(blockTime) as firstSeen to ensure historical snapshots only include
+   * tokens active at that time.
    */
   private async updateWalletTokens(transactions: UnifiedTransaction[], walletSet: Set<string>): Promise<void> {
     // Collect: { walletKey → { tokenId → earliestBlockTime } }
@@ -473,11 +484,15 @@ export class TransactionFetcherService {
     }
 
     // Save each (wallet, chain) entry
+    let totalTokenEntries = 0;
     for (const [key, tokenMap] of walletTokenMap) {
       const [wallet, chain] = key.split('_');
       const tokens = Array.from(tokenMap.entries()).map(([tokenId, firstSeen]) => ({ tokenId, firstSeen }));
+      totalTokenEntries += tokens.length;
       await this.cacheService.saveWalletTokens(wallet, chain, tokens);
     }
+
+    logger.info(`updateWalletTokens: updated ${walletTokenMap.size} wallet-chain pairs with ${totalTokenEntries} total token entries`);
   }
 
   private async enrichTransactionWithUSD(tx: UnifiedTransaction): Promise<void> {
@@ -506,7 +521,7 @@ export class TransactionFetcherService {
         }
       }
     } catch (e) {
-      console.warn(`Failed to fetch native USD price for ${nativeSymbol} at ${tx.blockTime}`, e);
+      logger.warn(`Failed to fetch native USD price for ${nativeSymbol} at ${tx.blockTime}`, e);
     }
 
     for (const tt of tx.tokenTransfers) {
@@ -525,7 +540,7 @@ export class TransactionFetcherService {
           tt.usdValue = parseFloat(tt.valueFormatted) * tokenUsdPrice;
         }
       } catch (e) {
-        console.warn(`Failed to fetch token USD price for ${tt.tokenSymbol} at ${tx.blockTime}`, e);
+        logger.warn(`Failed to fetch token USD price for ${tt.tokenSymbol} at ${tx.blockTime}`, e);
       }
     }
   }

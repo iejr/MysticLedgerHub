@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import pRetry from 'p-retry';
+import { logger } from 'firebase-functions';
 import { Throttler } from './Throttler.js';
 
 export interface AdapterConfig {
@@ -29,8 +30,9 @@ export abstract class BaseAdapter {
         {
           retries: 3,
           onFailedAttempt: (error) => {
-            console.warn(
-              `Attempt ${error.attemptNumber} failed. There are ${error.retriesLeft} retries left.`
+            logger.warn(
+              `Attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`,
+              { url: config.url, method: config.method }
             );
           },
         }

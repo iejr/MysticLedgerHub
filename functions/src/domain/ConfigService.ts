@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import * as fs from 'fs';
 import * as path from 'path';
 import yaml from 'js-yaml';
@@ -79,7 +80,8 @@ export class ConfigService {
     const chainsFile = fs.readFileSync(chainsPath, 'utf8');
     this.chainConfig = yaml.load(chainsFile) as Record<string, ChainMetadata>;
 
-    // Build reverse evmChainId → internal chain ID map
+    // Reverse map: evmChainId → internal chain ID, used to translate Uniswap's
+    // numeric chain IDs back to our internal string identifiers (e.g. 1 → "ethereum").
     for (const [key, meta] of Object.entries(this.chainConfig)) {
       if (meta.evmChainId) {
         this.evmChainIdToChain.set(meta.evmChainId, key.toLowerCase());
@@ -109,22 +111,34 @@ export class ConfigService {
     const walletsPath = path.resolve(process.cwd(), 'src/config/wallets.yaml');
     const walletsFile = fs.readFileSync(walletsPath, 'utf8');
     this.walletConfig = yaml.load(walletsFile) as WalletConfig;
+
+    logger.info(`ConfigService initialized: ${Object.keys(this.chainConfig).length} chains, ` +
+      `${this.tokenConfig.tokens.length} system tokens, ` +
+      `${this.tokenByIdIndex.size - this.tokenConfig.tokens.length} uniswap tokens, ` +
+      `${this.walletConfig.wallets.length} wallets`);
   }
 
   private loadUniswapTokens(): void {
     const uniswapPath = path.resolve(process.cwd(), 'tokens.uniswap.json');
-    if (!fs.existsSync(uniswapPath)) return;
+    if (!fs.existsSync(uniswapPath)) {
+      logger.info('loadUniswapTokens: tokens.uniswap.json not found, skipping');
+      return;
+    }
 
     const raw = JSON.parse(fs.readFileSync(uniswapPath, 'utf8'));
     const uniswapTokens: UniswapToken[] = raw.tokens || [];
+    let loaded = 0;
+    let skipped = 0;
 
     for (const ut of uniswapTokens) {
       const chain = this.evmChainIdToChain.get(ut.chainId);
-      if (!chain) continue; // Skip unsupported chains
+      if (!chain) { skipped++; continue; } // Skip unsupported chains
 
       const indexKey = `${chain}_${ut.address.toLowerCase()}`;
-      if (this.tokenIndex.has(indexKey)) continue; // System token already registered
+      if (this.tokenIndex.has(indexKey)) { skipped++; continue; } // System token already registered
 
+      // Generated ID uses chain + first 8 hex chars of address — compact but sufficient
+      // for uniqueness within a chain.
       const tokenId = `uniswap-${chain}-${ut.address.toLowerCase().slice(2, 10)}`;
       const entry: TokenMetadata = {
         id: tokenId,
@@ -140,7 +154,10 @@ export class ConfigService {
       if (!this.tokenByIdIndex.has(tokenId)) {
         this.tokenByIdIndex.set(tokenId, entry);
       }
+      loaded++;
     }
+
+    logger.info(`loadUniswapTokens: loaded ${loaded}, skipped ${skipped} (of ${uniswapTokens.length} total)`);
   }
 
   // --- Token Database methods (full DB: system + uniswap) ---
