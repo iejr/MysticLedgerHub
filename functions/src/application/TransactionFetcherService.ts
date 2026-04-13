@@ -458,11 +458,13 @@ export class TransactionFetcherService {
 
   /**
    * Extract per-wallet token interactions from enriched transactions.
-   * Uses min(blockTime) as firstSeen to ensure historical snapshots only include
-   * tokens active at that time.
+   * Uses max(blockTime) as lastSeen — most-recent interaction per token.
+   * lastSeen is preferred over firstSeen because firstSeen requires backfilling
+   * to genesis to be accurate; a wrong firstSeen would risk mis-filtering useful tokens.
+   * lastSeen is metadata only and is NOT used to filter tokens in balance fetch.
    */
   private async updateWalletTokens(transactions: UnifiedTransaction[], walletSet: Set<string>): Promise<void> {
-    // Collect: { walletKey → { tokenId → earliestBlockTime } }
+    // Collect: { walletKey → { tokenId → latestBlockTime } }
     const walletTokenMap = new Map<string, Map<string, string>>();
 
     for (const tx of transactions) {
@@ -476,7 +478,7 @@ export class TransactionFetcherService {
           if (!walletTokenMap.has(key)) walletTokenMap.set(key, new Map());
           const tokenMap = walletTokenMap.get(key)!;
           const existing = tokenMap.get(tt.tokenId);
-          if (!existing || tx.blockTime < existing) {
+          if (!existing || tx.blockTime > existing) {
             tokenMap.set(tt.tokenId, tx.blockTime);
           }
         }
@@ -487,7 +489,7 @@ export class TransactionFetcherService {
     let totalTokenEntries = 0;
     for (const [key, tokenMap] of walletTokenMap) {
       const [wallet, chain] = key.split('_');
-      const tokens = Array.from(tokenMap.entries()).map(([tokenId, firstSeen]) => ({ tokenId, firstSeen }));
+      const tokens = Array.from(tokenMap.entries()).map(([tokenId, lastSeen]) => ({ tokenId, lastSeen }));
       totalTokenEntries += tokens.length;
       await this.cacheService.saveWalletTokens(wallet, chain, tokens);
     }

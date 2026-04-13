@@ -83,16 +83,15 @@ export class BalanceFetcherService {
     for (const [chain, chainWallets] of Object.entries(chainToWallets)) {
       this.alchemyAdapter.setChain(chain);
       const blockNumber = chainBlockNumbers?.[chain] || options.blockNumber;
-      const fallbackTokens = this.configService.getTokensForChain(chain);
 
       const batchRequests: BalanceBatchRequest[] = [];
       const requestMeta: { wallet: string; token: any }[] = [];
       let cacheHits = 0;
 
       for (const wallet of chainWallets) {
-        // Determine which tokens to query for this wallet
-        const tokensForWallet = await this.resolveTokensForWallet(wallet.address, chain, requestedDate);
-        const tokens = tokensForWallet.length > 0 ? tokensForWallet : fallbackTokens;
+        // Base tokens (from tokens.yaml) are always queried.
+        // Merge with wallet_tokens cache to add tokens the wallet has interacted with.
+        const tokens = await this.resolveTokensForWallet(wallet.address, chain);
 
         for (const token of tokens) {
           const cached = await this.cacheService.getBalance(wallet.address, chain, token.id, blockNumber);
@@ -169,33 +168,33 @@ export class BalanceFetcherService {
   }
 
   /**
-   * Derive tokens from transaction history. For historical queries, only include
-   * tokens with firstSeen <= requested date to avoid querying tokens the wallet
-   * hadn't interacted with yet.
-   * Returns empty array if no wallet_tokens exist (caller falls back to system allowlist).
+   * Resolve the list of tokens to query for a wallet on a chain.
+   * Always starts from the base set in tokens.yaml (via getTokensForChain), then merges
+   * any additional tokens from wallet_tokens (populated from transaction history).
+   * If wallet_tokens is empty, only the base tokens are returned.
+   * Note: lastSeen is not used for filtering — it's metadata only.
    */
-  private async resolveTokensForWallet(wallet: string, chain: string, requestedDate?: string): Promise<TokenMetadata[]> {
+  private async resolveTokensForWallet(wallet: string, chain: string): Promise<TokenMetadata[]> {
+    // Start from base tokens in tokens.yaml
+    const baseTokens = this.configService.getTokensForChain(chain);
+    const tokenMap = new Map<string, TokenMetadata>();
+    for (const t of baseTokens) tokenMap.set(t.id, t);
+
+    // Merge wallet_tokens from transaction history
     const walletTokens = await this.cacheService.getWalletTokens(wallet, chain);
-    if (walletTokens.length === 0) {
-      logger.info(`resolveTokensForWallet: wallet=${wallet} chain=${chain} no wallet_tokens found, falling back to system allowlist`);
-      return [];
-    }
-
-    const tokens: TokenMetadata[] = [];
-
-    // Always include native token
-    const nativeToken = this.configService.getTokensForChain(chain).find(t => t.type === 'native');
-    if (nativeToken) tokens.push(nativeToken);
-
+    let addedFromHistory = 0;
     for (const wt of walletTokens) {
-      // Filter by firstSeen for historical queries
-      if (requestedDate && wt.firstSeen > requestedDate) continue;
-
+      if (tokenMap.has(wt.tokenId)) continue;
       const tokenEntry = this.configService.getTokenEntryById(wt.tokenId);
-      if (tokenEntry) tokens.push(tokenEntry);
+      if (tokenEntry) {
+        tokenMap.set(wt.tokenId, tokenEntry);
+        addedFromHistory++;
+      }
     }
 
-    logger.info(`resolveTokensForWallet: wallet=${wallet} chain=${chain} using wallet_tokens, tokenCount=${tokens.length}`, { requestedDate });
-    return tokens;
+    logger.info(
+      `resolveTokensForWallet: wallet=${wallet} chain=${chain} base=${baseTokens.length} fromHistory=${addedFromHistory} total=${tokenMap.size}`
+    );
+    return Array.from(tokenMap.values());
   }
 }

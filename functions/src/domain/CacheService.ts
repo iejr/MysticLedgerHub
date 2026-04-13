@@ -105,12 +105,12 @@ export class CacheService {
 
   // --- Wallet Tokens ---
 
-  async saveWalletTokens(wallet: string, chain: string, tokens: { tokenId: string; firstSeen: string }[]): Promise<void> {
+  async saveWalletTokens(wallet: string, chain: string, tokens: { tokenId: string; lastSeen: string }[]): Promise<void> {
     if (!this.writeEnabled) return;
     await this.firestoreAdapter.saveWalletTokens(wallet, chain, tokens);
   }
 
-  async getWalletTokens(wallet: string, chain: string): Promise<{ tokenId: string; firstSeen: string }[]> {
+  async getWalletTokens(wallet: string, chain: string): Promise<{ tokenId: string; lastSeen: string }[]> {
     if (!this.readEnabled) return [];
     return this.firestoreAdapter.getWalletTokens(wallet, chain);
   }

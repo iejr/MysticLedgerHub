@@ -192,26 +192,27 @@ export class FirestoreAdapter {
 
   // --- Wallet Tokens (which ERC-20s each wallet has interacted with per chain) ---
 
-  async saveWalletTokens(wallet: string, chain: string, tokens: { tokenId: string; firstSeen: string }[]): Promise<void> {
+  async saveWalletTokens(wallet: string, chain: string, tokens: { tokenId: string; lastSeen: string }[]): Promise<void> {
     const docId = `${wallet.toLowerCase()}_${chain.toLowerCase()}`;
     const doc = await this.db.collection(Collections.WALLET_TOKENS).doc(docId).get();
 
-    const existing: Record<string, string> = {}; // tokenId → firstSeen
+    const existing: Record<string, string> = {}; // tokenId → lastSeen
     if (doc.exists) {
       const data = doc.data();
       for (const t of (data?.tokens || [])) {
-        existing[t.tokenId] = t.firstSeen;
+        // Back-compat: older entries used `firstSeen`; treat them as lastSeen for merge purposes
+        existing[t.tokenId] = t.lastSeen || t.firstSeen;
       }
     }
 
-    // Merge: keep min(firstSeen) for each tokenId
+    // Merge: keep max(lastSeen) for each tokenId
     for (const t of tokens) {
-      if (!existing[t.tokenId] || t.firstSeen < existing[t.tokenId]) {
-        existing[t.tokenId] = t.firstSeen;
+      if (!existing[t.tokenId] || t.lastSeen > existing[t.tokenId]) {
+        existing[t.tokenId] = t.lastSeen;
       }
     }
 
-    const merged = Object.entries(existing).map(([tokenId, firstSeen]) => ({ tokenId, firstSeen }));
+    const merged = Object.entries(existing).map(([tokenId, lastSeen]) => ({ tokenId, lastSeen }));
 
     await this.db.collection(Collections.WALLET_TOKENS).doc(docId).set({
       wallet: wallet.toLowerCase(),
@@ -221,9 +222,14 @@ export class FirestoreAdapter {
     });
   }
 
-  async getWalletTokens(wallet: string, chain: string): Promise<{ tokenId: string; firstSeen: string }[]> {
+  async getWalletTokens(wallet: string, chain: string): Promise<{ tokenId: string; lastSeen: string }[]> {
     const docId = `${wallet.toLowerCase()}_${chain.toLowerCase()}`;
     const doc = await this.db.collection(Collections.WALLET_TOKENS).doc(docId).get();
-    return doc.exists ? (doc.data()?.tokens || []) : [];
+    if (!doc.exists) return [];
+    // Back-compat: older entries used `firstSeen`
+    return (doc.data()?.tokens || []).map((t: any) => ({
+      tokenId: t.tokenId,
+      lastSeen: t.lastSeen || t.firstSeen,
+    }));
   }
 }
