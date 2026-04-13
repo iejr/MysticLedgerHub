@@ -57,7 +57,7 @@ export class CsvService {
 
       const row = [
         b.requestedDate || b.blocktime,      // 'date',                       
-        b.walletAddress,                     // 'address',
+        b.walletAddress.toLowerCase(),                     // 'address',
         wallet?.label || '',                 // 'label',
         chainId,                             // 'network',
         tokenAddress,                        // 'token_address',
@@ -148,8 +148,8 @@ export class CsvService {
           'normal',                           // sourceType
           '',                                 // source
           '',                                 // nonce
-          nt.from || '',                      // originalFromAddress
-          nt.to || '',                        // originalToAddress
+          nt.from.toLowerCase() || '',                      // originalFromAddress
+          nt.to?.toLowerCase() || '',                        // originalToAddress
           tx.status,                          // txStatus
         ];
         rows.push(row.map(v => this.escapeCsvField(String(v))).join(','));
@@ -186,8 +186,8 @@ export class CsvService {
           'erc20',                            // sourceType
           '',                                 // source
           '',                                 // nonce
-          tt.from,                            // originalFromAddress
-          tt.to,                              // originalToAddress
+          tt.from.toLowerCase(),                            // originalFromAddress
+          tt.to.toLowerCase(),                              // originalToAddress
           tx.status,                          // txStatus
         ];
         rows.push(row.map(v => this.escapeCsvField(String(v))).join(','));
