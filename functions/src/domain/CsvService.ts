@@ -57,7 +57,7 @@ export class CsvService {
 
       const row = [
         b.requestedDate || b.blocktime,      // 'date',                       
-        b.walletAddress.toLowerCase(),                     // 'address',
+        b.walletAddress,                     // 'address',
         wallet?.label || '',                 // 'label',
         chainId,                             // 'network',
         tokenAddress,                        // 'token_address',

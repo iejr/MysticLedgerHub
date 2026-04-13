@@ -3,7 +3,7 @@ tokens:
   # symbol is the public ticker shown to users.
 
   - id: native-eth
-    name: Ether
+    name: Ethereum
     symbol: ETH
     decimals: 18
     type: native
@@ -36,7 +36,7 @@ tokens:
   - id: angland-fish
     name: Angland FISH
     symbol: FISH
-    decimals: 0
+    decimals: 4
     type: erc20
     chains:
       base:
