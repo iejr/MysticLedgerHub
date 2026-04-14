@@ -64,7 +64,7 @@ export class CsvService {
         b.tokenSymbol,                       // 'symbol',
         b.tokenId,                           // 'name',
         b.balanceFormatted,                  // 'balance',
-        b.usdBalance?.toFixed(2) || '',      // 'usd_value',
+        b.usdBalance?.toString() || '',      // 'usd_value',
         '',                                  // 'possible_spam',
         '',                                  // 'verified_contract',
         '',                                  // 'security_score',
@@ -138,7 +138,7 @@ export class CsvService {
           nt.valueFormatted,                  // requestedAmount
           nt.valueFormatted,                  // netAmount
           tx.usdPrice?.toString() || '',      // tokenUsdPrice
-          nt.usdValue?.toFixed(2) || '',      // usdAmount
+          nt.usdValue?.toString() || '',      // usdAmount
           '',                                 // gasUsed
           '',                                 // gasPrice
           '',                                 // networkFee
@@ -174,9 +174,9 @@ export class CsvService {
           tt.valueFormatted,                  // requestedAmount
           tt.valueFormatted,                  // netAmount
           tt.usdValue && parseFloat(tt.valueFormatted) !== 0
-            ? (tt.usdValue / parseFloat(tt.valueFormatted)).toFixed(6)
+            ? (tt.usdValue / parseFloat(tt.valueFormatted)).toString()
             : '',                             // tokenUsdPrice
-          tt.usdValue?.toFixed(2) || '',      // usdAmount
+          tt.usdValue?.toString() || '',      // usdAmount
           '',                                 // gasUsed
           '',                                 // gasPrice
           '',                                 // networkFee
