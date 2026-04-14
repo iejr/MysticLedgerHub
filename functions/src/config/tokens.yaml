@@ -12,6 +12,8 @@ tokens:
       base: { }
       arbitrum: { }
       optimism: { }
+      blast: { }
+      zkSync: { }
       linea: { }
       ink: { }
       scroll: { }
@@ -24,37 +26,76 @@ tokens:
     chains:
       ethereum:
         address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-      base:
-        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-      polygon:
-        address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
       arbitrum:
         address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+      base:
+        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
       optimism:
         address: "0x0b2c639c533813f4aa9d7837caf62653d097ff85"
+      polygon:
+        address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+      zkSync:
+        address: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4"
+      linea:
+        address: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff"
+      ink:
+        address: "0x2D270e6886d130D724215A266106e6832161EAEd"
 
-  - id: angland-fish
-    name: Angland FISH
-    symbol: FISH
-    decimals: 4
+  - id: usdt
+    name: Tether USD
+    symbol: USDT
+    decimals: 6
     type: erc20
     chains:
+      ethereum:
+        address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+      avalanche:
+        address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4df4A8c7"
+      arbitrum:
+        address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
       base:
-        address: "0xaB646Ee997975B97851A923e4E8DaF4EA36D1e9b"
+        address: "0xfde4c96c8593536e31f229ea8f37b2ada2699bb2"
+      optimism:
+        address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"
+      polygon:
+        address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"
+
+  - id: native-pol
+    name: POL
+    symbol: POL
+    decimals: 18
+    type: native
+    chains:
+      polygon: { }
+
+  - id: jpyc
+    name: JPY Coin
+    symbol: JPYC
+    decimals: 18
+    type: erc20
+    chains:
+      ethereum:
+        address: "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29"
+      avalanche:
+        address: "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29"
+      polygon:
+        address: "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29"
 
 chains:
   ethereum:
-    allowlist: [native-eth, usdc]
+    allowlist: [native-eth, usdc, usdt, jpyc]
   arbitrum:
-    allowlist: [native-eth, usdc]
+    allowlist: [native-eth, usdc, usdt]
+  avalanche:
+    allowlist: [usdt, jpyc]
   base:
-    allowlist: [native-eth, usdc, angland-fish]
-  optimism:
     allowlist: [native-eth, usdc]
+  optimism:
+    allowlist: [native-eth, usdc, usdt]
   linea:
     allowlist: [native-eth]
   polygon:
-    allowlist: [usdc]
+    allowlist: [native-pol, usdc, usdt, jpyc]
   ink:
     allowlist: [native-eth]
   scroll:

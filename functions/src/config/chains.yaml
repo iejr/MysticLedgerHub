@@ -27,7 +27,7 @@ arbitrum:
   startBlock: 0
   explorerUrl: https://arbiscan.io
 
-avax:
+avalanche:
   evmChainId: 43114
   name: Avalanche C-Chain
   nativeSymbol: AVAX
