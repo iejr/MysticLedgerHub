@@ -3,7 +3,6 @@ import { UnifiedBalance, UnifiedTransaction } from '../domain/types.js';
 
 /** Firestore collection names — single source of truth */
 export const Collections = {
-  TRANSACTIONS: 'transactions',
   TOKEN_PRICES: 'token_prices',
   BLOCK_MAPPINGS: 'block_mappings',
   BALANCES: 'balances',
@@ -18,17 +17,6 @@ export class FirestoreAdapter {
 
   constructor(db: Firestore) {
     this.db = db;
-  }
-
-  // --- Per-wallet Transactions (legacy) ---
-
-  async saveTransaction(walletAddress: string, txHash: string, data: any): Promise<void> {
-    const docId = `${walletAddress.toLowerCase()}_${txHash.toLowerCase()}`;
-    await this.db.collection(Collections.TRANSACTIONS).doc(docId).set({
-      ...data,
-      walletAddress: walletAddress.toLowerCase(),
-      updatedAt: new Date(),
-    }, { merge: true });
   }
 
   // --- Price Caching (keyed by tokenId) ---

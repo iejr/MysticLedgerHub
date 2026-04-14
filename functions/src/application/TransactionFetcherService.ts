@@ -55,44 +55,6 @@ export class TransactionFetcherService {
     this.alchemyParser = new AlchemyParser();
   }
 
-  async fetchAndCache(options: FetchOptions): Promise<UnifiedTransaction[]> {
-    const walletAddress = options.walletAddress;
-    const chain = options.chain;
-
-    if (!walletAddress || !chain) {
-      throw new Error("walletAddress and chain are required for fetchAndCache");
-    }
-
-    logger.info(`fetchAndCache: starting for wallet=${walletAddress} chain=${chain}`, { fromBlock: options.fromBlock, toBlock: options.toBlock });
-
-    const allTransactions: UnifiedTransaction[] = [];
-
-    this.alchemyAdapter.setChain(chain);
-    const iterator = this.alchemyAdapter.getAssetTransferIterator({
-      fromAddress: walletAddress,
-      fromBlock: options.fromBlock,
-      toBlock: options.toBlock,
-      category: ['external', 'erc20', 'erc721', 'erc1155'],
-      withMetadata: true,
-      excludeZeroValue: true,
-    });
-
-    for await (const batch of iterator) {
-      const rawBatch = batch.map(t => t.rawData);
-      const parsedBatch = this.alchemyParser.parse(rawBatch, walletAddress);
-      parsedBatch.forEach((tx) => (tx.chain = chain));
-
-      allTransactions.push(...parsedBatch);
-
-      for (const tx of parsedBatch) {
-        await this.cacheService.saveTransaction(walletAddress, tx.txHash, tx);
-      }
-    }
-
-    logger.info(`fetchAndCache: completed for wallet=${walletAddress} chain=${chain}, txCount=${allTransactions.length}`);
-    return allTransactions;
-  }
-
   filterTransactionByAddress(transaction: UnifiedTransaction, addresses: Set<string>): boolean {
     for (const transfer of transaction.nativeTransfers) {
       if (transfer.from && addresses.has(transfer.from.toLowerCase())) return true;
