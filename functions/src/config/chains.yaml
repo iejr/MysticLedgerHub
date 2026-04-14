@@ -6,7 +6,7 @@ ethereum:
   name: Ethereum Mainnet
   nativeSymbol: ETH
   averageBlockTime: 12.1
-  startBlock: 20000000
+  startBlock: 10000000                  # May-04-2020 01:22:13 PM +UTC
   explorerUrl: https://etherscan.io/
 
 abstract:
@@ -15,7 +15,7 @@ abstract:
   nativeSymbol: ETH
   averageBlockTime: 0.5
   linearBlockTime: false
-  startBlock: 0
+  startBlock: 0                         # Oct-25-2024 06:31:23 PM +UTC
   explorerUrl: https://abscan.org/blocks
 
 arbitrum:
@@ -24,7 +24,7 @@ arbitrum:
   nativeSymbol: ETH
   averageBlockTime: 0.25
   linearBlockTime: false
-  startBlock: 0
+  startBlock: 0                         # May-28-2021 10:13:20 PM +UTC
   explorerUrl: https://arbiscan.io
 
 avalanche:
@@ -32,7 +32,7 @@ avalanche:
   name: Avalanche C-Chain
   nativeSymbol: AVAX
   averageBlockTime: 1.0
-  startBlock: 0
+  startBlock: 10000                     # Dec 22, 2020 17:53:44 GMT
   explorerUrl: https://avascan.info/
 
 base:
@@ -40,7 +40,7 @@ base:
   name: Base
   nativeSymbol: ETH
   averageBlockTime: 2.0
-  startBlock: 0
+  startBlock: 0                         # Jun-15-2023 12:35:47 AM +UTC
   explorerUrl: https://basescan.org/
 
 bnb:
@@ -49,7 +49,7 @@ bnb:
   nativeSymbol: BNB
   averageBlockTime: 0.45
   linearBlockTime: false
-  startBlock: 0
+  startBlock: 0                         # Apr-20-2020 01:46:54 PM +UTC
   explorerUrl: https://bscscan.com/
 
 optimism:
@@ -57,7 +57,7 @@ optimism:
   name: Optimism
   nativeSymbol: ETH
   averageBlockTime: 2.0
-  startBlock: 0
+  startBlock: 0                         # Jan-14-2021 03:51:40 PM +UTC
   explorerUrl: https://optimistic.etherscan.io/
 
 polygon:
@@ -65,7 +65,7 @@ polygon:
   name: Polygon
   nativeSymbol: MATIC
   averageBlockTime: 2.1
-  startBlock: 0
+  startBlock: 0                         # May-30-2020 07:47:16 AM +UTC
   explorerUrl: https://polygonscan.com/
 
 zkSync:
@@ -74,7 +74,7 @@ zkSync:
   nativeSymbol: ETH
   averageBlockTime: 1.0
   linearBlockTime: false
-  startBlock: 0
+  startBlock: 0                         # 2023-02-14 23:22
   explorerUrl: https://explorer.zksync.io/
 
 zora:
@@ -82,7 +82,7 @@ zora:
   name: Zora
   nativeSymbol: ETH
   averageBlockTime: 2.0
-  startBlock: 0
+  startBlock: 0                         # Jun 14 2023 07:03:59 AM (+09:00 UTC)
   explorerUrl: https://explorer.zora.energy/
 
 blast:
@@ -90,7 +90,7 @@ blast:
   name: Blast
   nativeSymbol: ETH
   averageBlockTime: 2.0
-  startBlock: 0
+  startBlock: 0                         # Feb-24-2024 09:23:35 PM +UTC
   explorerUrl: https://blastscan.io/
 
 scroll:
@@ -98,7 +98,7 @@ scroll:
   name: Scroll
   nativeSymbol: ETH
   averageBlockTime: 3.0
-  startBlock: 0
+  startBlock: 0                         # Oct 10 2023 15:00:00
   explorerUrl: https://scrollscan.com/
 
 linea:
@@ -106,7 +106,7 @@ linea:
   name: Linea
   nativeSymbol: ETH
   averageBlockTime: 2.2
-  startBlock: 0
+  startBlock: 0                         # Jul-06-2023 01:15:00 PM +UTC
   explorerUrl: https://lineascan.build/
 
 ink:
@@ -114,5 +114,5 @@ ink:
   name: Ink
   nativeSymbol: ETH
   averageBlockTime: 1.0
-  startBlock: 0
+  startBlock: 0                         # Dec 07 2024 00:20:11 (+09:00 UTC)
   explorerUrl: https://explorer.inkonchain.com/
