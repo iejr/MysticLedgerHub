@@ -19,10 +19,14 @@ import {
 // Chains not listed here fall back to `{chain}-mainnet`.
 const CHAIN_SLUGS: Record<string, string> = {
   'ethereum': 'eth-mainnet',
-  'base': 'base-mainnet',
-  'polygon': 'polygon-mainnet',
   'arbitrum': 'arb-mainnet',
+  'avalanche': 'avax-mainnet',
+  'base': 'base-mainnet',
+  'linea': 'linea-mainnet',
   'optimism': 'opt-mainnet',
+  'polygon': 'polygon-mainnet',
+  'ink': 'ink-mainnet',
+  'scroll': 'scroll-mainnet',
 };
 
 /** Convert decimal block number to hex string for Alchemy JSON-RPC. */

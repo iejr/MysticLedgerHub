@@ -23,7 +23,7 @@ const moralisThrottler = new Throttler({ concurrency: 1, interval: 1000, interva
 const alchemyThrottler = new Throttler({ concurrency: 50, interval: 1000, intervalCap: 50 });
 
 export const fetchTransactions = onRequest(
-  { timeoutSeconds: 3600, memory: '1GiB' },
+  { timeoutSeconds: 3600, memory: '16GiB' },
   async (req, res) => {
     const { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv, dryRun } = req.body;
     logger.info('fetchTransactions requested', { addresses, chains, startDate, endDate, fromBlock, toBlock, useCache, exportCsv, dryRun });
@@ -88,7 +88,7 @@ export const fetchTransactions = onRequest(
 );
 
 export const fetchBalances = onRequest(
-  { timeoutSeconds: 3600, memory: '1GiB' },
+  { timeoutSeconds: 3600, memory: '16GiB' },
   async (req, res) => {
     const { addresses, timestamp, blockNumber, chainBlockNumbers, includeUsd, exportCsv, useCache, dryRun } = req.body;
     logger.info('fetchBalances requested', { addresses, timestamp, blockNumber, includeUsd, exportCsv, useCache, dryRun });
