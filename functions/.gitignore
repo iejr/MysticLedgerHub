@@ -1,2 +1,5 @@
 node_modules/
 lib/
+src/config/wallets.yaml
+firebase-debug.log
+firestore-debug.log
