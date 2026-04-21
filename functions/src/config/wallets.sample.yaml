@@ -1,0 +1,12 @@
+global:
+  chains: [ethereum, polygon]
+  includeUsd: true
+
+auxiliaryAddresses:
+  - address: "0xabc"
+    label: "Internal Tx"
+
+wallets:
+  - address: "0xabc"
+    label: "Master Wallet"
+    chains: [ethereum] # Override for specific wallet
